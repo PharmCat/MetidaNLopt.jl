@@ -1,7 +1,7 @@
 module MetidaNLopt
 
-    using Metida, NLopt, ForwardDiff
-    import Metida: LMM, varlinkvec, varlinkrvec, lmmlog!, LMMLogMsg, reml_sweep_β_b, reml_sweep_β, fit_nlopt!, gmat_base_z2!, rmat_basep_z2!
+    using Metida, NLopt, ForwardDiff, LinearAlgebra
+    import Metida: LMM, initvar, varlinkvec, varlinkrvec, thetalength, varlinkvecapply!, lmmlog!, LMMLogMsg, reml_sweep_β_b, reml_sweep_β, fit_nlopt!, gmat_base_z2!, rmat_basep_z2!
 
     reml_sweep_β_cuda() = error("MetidaCu not found. \n - Run `using MetidaCu` before.")
 
