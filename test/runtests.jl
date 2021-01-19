@@ -11,7 +11,7 @@ transform!(df0, :formulation=> categorical, renamecols=false)
 @testset "  Basic test                                               " begin
     lmm = LMM(@formula(var~sequence+period+formulation), df0;
     random = VarEffect(@covstr(formulation), CSH),
-    repeated = VarEffect(@covstr(formulation), DIAG),
+    repeated = VarEffect(@covstr(formulation), Metida.DIAG),
     subject = :subject)
     fit!(lmm; solver = :nlopt)
     @test lmm.result.reml       ≈ 10.065991599800707 atol=1E-6
