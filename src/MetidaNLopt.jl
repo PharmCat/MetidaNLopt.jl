@@ -1,7 +1,9 @@
 module MetidaNLopt
 
     using Metida, NLopt, ForwardDiff, LinearAlgebra
-    import Metida: LMM, initvar, varlinkvec, varlinkrvec, thetalength, varlinkvecapply!, lmmlog!, LMMLogMsg, reml_sweep_β_b, reml_sweep_β, fit_nlopt!, gmat_base_z2!, rmat_basep_z2!
+    import Metida: LMM, initvar, varlinkvec, varlinkrvec, thetalength,
+    varlinkrvecapply2!, varlinkvecapply2,
+    lmmlog!, LMMLogMsg, reml_sweep_β_b, reml_sweep_β, fit_nlopt!, gmat_base_z2!, rmat_basep_z2!
 
     reml_sweep_β_cuda(args...) = error("MetidaCu not found. \n - Run `using MetidaCu` before.")
 
@@ -22,8 +24,10 @@ module MetidaNLopt
         # Optimization function
         if solver == :nlopt
             optfunc = reml_sweep_β_nlopt
-        else
+        elseif solver == :cuda
             optfunc = reml_sweep_β_cuda
+        else
+            error("Unknown solver!")
         end
         ############################################################################
         #Initial variance
@@ -41,7 +45,7 @@ module MetidaNLopt
             lmmlog!(lmm, verbose, LMMLogMsg(:INFO, "Initial θ: "*string(θ)))
         end
         ############################################################################
-        varlinkvecapply!(θ, fvr)
+        varlinkrvecapply2!(θ, lmm.covstr.ct)
         ############################################################################
         opt = NLopt.Opt(:LN_BOBYQA,  thetalength(lmm))
         NLopt.ftol_rel!(opt, 1.0e-14)
@@ -49,12 +53,12 @@ module MetidaNLopt
         NLopt.xtol_rel!(opt, 1.0e-14)
         NLopt.xtol_abs!(opt, x_tol)
         #-----------------------------------------------------------------------
-        obj = (x,y) -> optfunc(lmm, varlinkvecapply!(x, fv))[1]
+        obj = (x,y) -> optfunc(lmm, varlinkvecapply2(x, lmm.covstr.ct))[1]
         NLopt.min_objective!(opt, obj)
         #Optimization object
         lmm.result.optim = NLopt.optimize!(opt, θ)
         #Theta (θ) vector
-        lmm.result.theta  = varlinkvecapply!(deepcopy(lmm.result.optim[2]), fv)
+        lmm.result.theta  = varlinkvecapply2(lmm.result.optim[2], lmm.covstr.ct)
         try
             #Hessian
             if hcalck
