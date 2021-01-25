@@ -15,5 +15,6 @@ transform!(df0, :formulation=> categorical, renamecols=false)
     repeated = VarEffect(@covstr(formulation), Metida.DIAG),
     subject = :subject)
     fit!(lmm; solver = :nlopt)
+    #10.065239006121315
     @test lmm.result.reml       ≈ 10.065456008797781 atol=1E-6
 end

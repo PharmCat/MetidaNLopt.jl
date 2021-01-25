@@ -46,9 +46,9 @@ module MetidaNLopt
         ############################################################################
         #COBYLA
         opt = NLopt.Opt(:LN_BOBYQA,  thetalength(lmm))
-        NLopt.ftol_rel!(opt, 1.0e-14)
+        #NLopt.ftol_rel!(opt, 1.0e-14)
         NLopt.ftol_abs!(opt, f_tol)
-        NLopt.xtol_rel!(opt, 1.0e-14)
+        #NLopt.xtol_rel!(opt, 1.0e-14)
         NLopt.xtol_abs!(opt, x_tol)
         #opt.lower_bounds = lb::Union{AbstractVector,Real}
         #opt.upper_bounds = ub::Union{AbstractVector,Real}
