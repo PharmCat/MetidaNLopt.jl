@@ -1,7 +1,8 @@
 # MetidaNLopt
 # Copyright © 2019-2020 Vladimir Arnautov aka PharmCat <mail@pharmcat.net>
+using Metida
 using MetidaNLopt
-using Metida, Test, CSV, DataFrames, StatsModels
+using  Test, CSV, DataFrames, StatsModels
 
 df0 = CSV.File(dirname(pathof(Metida))*"\\..\\test\\csv\\df0.csv") |> DataFrame
 transform!(df0, :subject => categorical, renamecols=false)
@@ -14,5 +15,5 @@ transform!(df0, :formulation=> categorical, renamecols=false)
     repeated = VarEffect(@covstr(formulation), Metida.DIAG),
     subject = :subject)
     fit!(lmm; solver = :nlopt)
-    @test lmm.result.reml       ≈ 10.065991599800707 atol=1E-6
+    @test lmm.result.reml       ≈ 10.065456008797781 atol=1E-6
 end

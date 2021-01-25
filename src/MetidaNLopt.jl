@@ -1,9 +1,9 @@
 module MetidaNLopt
 
     using Metida, NLopt, ForwardDiff, LinearAlgebra
-    import Metida: LMM, initvar, varlinkvec, varlinkrvec, thetalength,
-    varlinkrvecapply2!, varlinkvecapply2,
-    lmmlog!, LMMLogMsg, reml_sweep_β_b, reml_sweep_β, fit_nlopt!, gmat_base_z2!, rmat_basep_z2!
+    import Metida: LMM, initvar, thetalength,
+    varlinkrvecapply!, varlinkvecapply,
+    lmmlog!, LMMLogMsg, reml_sweep_β, fit_nlopt!, rmat_base_inc!, zgz_base_inc!
 
     reml_sweep_β_cuda(args...) = error("MetidaCu not found. \n - Run `using MetidaCu` before.")
 
@@ -18,9 +18,6 @@ module MetidaNLopt
         f_tol = 1e-12,
         hcalck::Bool = false,
         init = nothing) where T
-        #Make varlink function
-        fv  = varlinkvec(lmm.covstr.ct)
-        fvr = varlinkrvec(lmm.covstr.ct)
         # Optimization function
         if solver == :nlopt
             optfunc = reml_sweep_β_nlopt
@@ -45,24 +42,27 @@ module MetidaNLopt
             lmmlog!(lmm, verbose, LMMLogMsg(:INFO, "Initial θ: "*string(θ)))
         end
         ############################################################################
-        varlinkrvecapply2!(θ, lmm.covstr.ct)
+        varlinkrvecapply!(θ, lmm.covstr.ct)
         ############################################################################
+        #COBYLA
         opt = NLopt.Opt(:LN_BOBYQA,  thetalength(lmm))
         NLopt.ftol_rel!(opt, 1.0e-14)
         NLopt.ftol_abs!(opt, f_tol)
         NLopt.xtol_rel!(opt, 1.0e-14)
         NLopt.xtol_abs!(opt, x_tol)
+        #opt.lower_bounds = lb::Union{AbstractVector,Real}
+        #opt.upper_bounds = ub::Union{AbstractVector,Real}
         #-----------------------------------------------------------------------
-        obj = (x,y) -> optfunc(lmm, varlinkvecapply2(x, lmm.covstr.ct))[1]
+        obj = (x,y) -> optfunc(lmm, varlinkvecapply(x, lmm.covstr.ct))[1]
         NLopt.min_objective!(opt, obj)
         #Optimization object
         lmm.result.optim = NLopt.optimize!(opt, θ)
         #Theta (θ) vector
-        lmm.result.theta  = varlinkvecapply2(lmm.result.optim[2], lmm.covstr.ct)
+        lmm.result.theta  = varlinkvecapply(lmm.result.optim[2], lmm.covstr.ct)
         try
             #Hessian
             if hcalck
-                lmm.result.h      = ForwardDiff.hessian(x -> optfunc(lmm, x)[1], lmm.result.theta)
+                lmm.result.h      = ForwardDiff.hessian(x -> reml_sweep_β(lmm, x)[1], lmm.result.theta)
                 qrd = qr(lmm.result.h, Val(true))
                 for i = 1:length(lmm.result.theta)
                     if abs(qrd.R[i,i]) < 1E-10
@@ -113,8 +113,8 @@ module MetidaNLopt
             q    = length(lmm.data.block[i])
             qswm = q + lmm.rankx
             V   = zeros(T, q, q)
-            gmat_base_z2!(V, θ, lmm.covstr, lmm.data.block[i], lmm.covstr.sblock[i])
-            rmat_basep_z2!(V, θ[lmm.covstr.tr[end]], lmm.covstr, lmm.data.block[i], lmm.covstr.sblock[i])
+            zgz_base_inc!(V, θ, lmm.covstr, lmm.data.block[i], lmm.covstr.sblock[i])
+            rmat_base_inc!(V, θ[lmm.covstr.tr[end]], lmm.covstr, lmm.data.block[i], lmm.covstr.sblock[i])
             #-------------------------------------------------------------------
             X[i] = view(lmm.data.xv,  lmm.data.block[i], :)
             y[i] = view(lmm.data.yv, lmm.data.block[i])
