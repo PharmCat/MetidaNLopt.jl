@@ -51,6 +51,9 @@ module MetidaNLopt
         else
             error("Unknown solver!")
         end
+        if verbose == :auto
+            verbose = 1
+        end
         ############################################################################
         #Initial variance
         θ  = zeros(T, lmm.covstr.tl)
@@ -71,9 +74,9 @@ module MetidaNLopt
         ############################################################################
         #COBYLA
         opt = NLopt.Opt(:LN_BOBYQA,  thetalength(lmm))
-        #NLopt.ftol_rel!(opt, f_tol)
+        NLopt.ftol_rel!(opt, 0.0)
         NLopt.ftol_abs!(opt, f_tol)
-        #NLopt.xtol_rel!(opt, 1.0e-14)
+        NLopt.xtol_rel!(opt, 0.0)
         NLopt.xtol_abs!(opt, x_tol)
         #opt.lower_bounds = lb::Union{AbstractVector,Real}
         #opt.upper_bounds = ub::Union{AbstractVector,Real}
@@ -155,7 +158,7 @@ module MetidaNLopt
                 #θ₁  += sum(log.(diag(A[i])))*2
             catch
                 lmmlog!(lmm, LMMLogMsg(:ERROR, "θ₁ not estimated during REML calculation, V isn't positive definite or |V| less zero."))
-                return (Inf, nothing, nothing, Inf)
+                return (1e100, nothing, nothing, 1e100)
             end
             vX   = LinearAlgebra.LAPACK.potrs!('L', A[i], copy(data.xv[i]))
             vy   = LinearAlgebra.LAPACK.potrs!('L', A[i], copy(data.yv[i]))
