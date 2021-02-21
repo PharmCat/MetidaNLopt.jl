@@ -1,12 +1,34 @@
 module MetidaNLopt
 
-    using Metida, NLopt, ForwardDiff, LinearAlgebra
-    import Metida: LMM, initvar, thetalength,
+    using NLopt, ForwardDiff, LinearAlgebra, Reexport
+    @reexport using Metida
+    import Metida: LMM, AbstractLMMDataBlocks, LMMDataViews, initvar, thetalength,
     varlinkrvecapply!, varlinkvecapply,
-    lmmlog!, LMMLogMsg, reml_sweep_β, fit_nlopt!, rmat_base_inc!, zgz_base_inc!
+    lmmlog!, LMMLogMsg, fit_nlopt!, rmat_base_inc!, zgz_base_inc!
 
     reml_sweep_β_cuda(args...) = error("MetidaCu not found. \n - Run `using MetidaCu` before.")
+    cudata(args...) = error("MetidaCu not found. \n - Run `using MetidaCu` before.")
 
+    #=
+    struct LMMDataBlocks{T1, T2} <: AbstractLMMDataBlocks
+        # Fixed effect matrix views
+        xv::T1
+        # Responce vector views
+        yv::T2
+        function LMMDataBlocks(xv::Matrix, yv::Vector, vcovblock::Vector)
+            x = Vector{typeof(xv)}(undef, length(vcovblock))
+            y = Vector{typeof(yv)}(undef, length(vcovblock))
+            for i = 1:length(vcovblock)
+                x[i] = Matrix(view(xv, vcovblock[i],:))
+                y[i] = Vector(view(yv, vcovblock[i]))
+            end
+            new{typeof(x), typeof(y)}(x, y)
+        end
+        function LMMDataBlocks(lmm)
+            return LMMDataBlocks(lmm.data.xv, lmm.data.yv, lmm.covstr.vcovblock)
+        end
+    end
+    =#
     function Metida.fit_nlopt!(lmm::LMM{T};
         solver = :nlopt,
         verbose = :auto,
@@ -16,14 +38,16 @@ module MetidaNLopt
         g_tol = 1e-12,
         x_tol = 1e-12,
         f_tol = 1e-12,
-        hcalck::Bool = false,
+        hes::Bool = false,
         init = nothing,
         io = stdout) where T
         # Optimization function
         if solver == :nlopt
             optfunc = reml_sweep_β_nlopt
+            data    = LMMDataViews(lmm)
         elseif solver == :cuda
             optfunc = reml_sweep_β_cuda
+            data    = cudata(lmm)
         else
             error("Unknown solver!")
         end
@@ -54,7 +78,7 @@ module MetidaNLopt
         #opt.lower_bounds = lb::Union{AbstractVector,Real}
         #opt.upper_bounds = ub::Union{AbstractVector,Real}
         #-----------------------------------------------------------------------
-        obj = (x,y) -> optfunc(lmm, varlinkvecapply(x, lmm.covstr.ct; rholinkf = rholinkf))[1]
+        obj = (x,y) -> optfunc(lmm, data, varlinkvecapply(x, lmm.covstr.ct; rholinkf = rholinkf))[1]
         NLopt.min_objective!(opt, obj)
         #Optimization object
         lmm.result.optim = NLopt.optimize!(opt, θ)
@@ -63,7 +87,7 @@ module MetidaNLopt
         lmmlog!(io, lmm, verbose, LMMLogMsg(:INFO, "Resulting θ: "*string(lmm.result.theta)))
 
         #-2 LogREML, β, iC
-        lmm.result.reml, lmm.result.beta, iC, θ₃ = optfunc(lmm, lmm.result.theta)
+        lmm.result.reml, lmm.result.beta, iC, θ₃ = optfunc(lmm, data, lmm.result.theta)
         if !isnan(lmm.result.reml) && !isinf(lmm.result.reml)
             #Variance-vovariance matrix of β
             lmm.result.c            = pinv(iC)
@@ -75,7 +99,7 @@ module MetidaNLopt
             lmmlog!(io, lmm, verbose, LMMLogMsg(:INFO, "Model NOT fitted."))
             lmm.result.fit      = false
         end
-        if hcalck && lmm.result.fit
+        if hes && lmm.result.fit
                 #Hessian
             lmm.result.h      = hessian(lmm, lmm.result.theta)
                 #H positive definite check
@@ -96,7 +120,7 @@ module MetidaNLopt
         lmm
     end
 
-    function reml_sweep_β_nlopt(lmm, θ::Vector{T}) where T
+    function reml_sweep_β_nlopt(lmm, data::AbstractLMMDataBlocks, θ::Vector{T}) where T
         n             = length(lmm.covstr.vcovblock)
         N             = length(lmm.data.yv)
         c             = (N - lmm.rankx)*log(2π)
@@ -108,9 +132,9 @@ module MetidaNLopt
         #βm            = zeros(T, lmm.rankx)
         βtc           = zeros(T, lmm.rankx)
         β             = Vector{T}(undef, lmm.rankx)
-        A             = Vector{Matrix}(undef, n)
-        X             = Vector{Matrix}(undef, n)
-        y             = Vector{Vector}(undef, n)
+        A             = Vector{Matrix{T}}(undef, n)
+        #X             = Vector{Matrix}(undef, n)
+        #y             = Vector{Vector}(undef, n)
         q             = zero(Int)
         qswm          = zero(Int)
         logdetθ₂      = zero(T)
@@ -121,21 +145,24 @@ module MetidaNLopt
             zgz_base_inc!(V, θ, lmm.covstr, lmm.covstr.vcovblock[i], lmm.covstr.sblock[i])
             rmat_base_inc!(V, θ[lmm.covstr.tr[end]], lmm.covstr, lmm.covstr.vcovblock[i], lmm.covstr.sblock[i])
             #-------------------------------------------------------------------
-            X[i] = view(lmm.data.xv,  lmm.covstr.vcovblock[i], :)
-            y[i] = view(lmm.data.yv, lmm.covstr.vcovblock[i])
+            #X[i] = view(lmm.data.xv,  lmm.covstr.vcovblock[i], :)
+            #y[i] = view(lmm.data.yv, lmm.covstr.vcovblock[i])
             #-------------------------------------------------------------------
             #Cholesky
             A[i] = LinearAlgebra.LAPACK.potrf!('L', V)[1]
             try
                 θ₁  += logdet(Cholesky(A[i], 'L', 0))
+                #θ₁  += sum(log.(diag(A[i])))*2
             catch
                 lmmlog!(lmm, LMMLogMsg(:ERROR, "θ₁ not estimated during REML calculation, V isn't positive definite or |V| less zero."))
                 return (Inf, nothing, nothing, Inf)
             end
-            vX   = LinearAlgebra.LAPACK.potrs!('L', A[i], copy(X[i]))
-            vy   = LinearAlgebra.LAPACK.potrs!('L', A[i], copy(y[i]))
-            LinearAlgebra.BLAS.gemm!('T', 'N', one(T), X[i], vX, one(T), θ₂tc)
-            LinearAlgebra.BLAS.gemv!('T', one(T), X[i], vy, one(T), βtc)
+            vX   = LinearAlgebra.LAPACK.potrs!('L', A[i], copy(data.xv[i]))
+            vy   = LinearAlgebra.LAPACK.potrs!('L', A[i], copy(data.yv[i]))
+            #LinearAlgebra.BLAS.gemm!('T', 'N', one(T), data.xv[i], vX, one(T), θ₂tc)
+            mul!(θ₂tc, data.xv[i]', vX, one(T), one(T))
+            #LinearAlgebra.BLAS.gemv!('T', one(T), data.xv[i], vy, one(T), βtc)
+            mul!(βtc, data.xv[i]', vy, one(T), one(T))
             #-------------------------------------------------------------------
         end
         #Beta calculation
@@ -144,10 +171,11 @@ module MetidaNLopt
         copyto!(β, LinearAlgebra.LAPACK.potrs!('L', θ₂tc, βtc))
         # θ₃ calculation
         @simd for i = 1:n
-            r = LinearAlgebra.BLAS.gemv!('N', -one(T), X[i], βtc,
-            one(T), y[i])
+            #r    = LinearAlgebra.BLAS.gemv!('N', -one(T), data.xv[i], βtc, one(T), copy(data.yv[i]))
+            r    = mul!(copy(data.yv[i]), data.xv[i], βtc, -one(T), one(T))
             vr   = LinearAlgebra.LAPACK.potrs!('L', A[i], copy(r))
             θ₃  += r'*vr
+            #θ₃  += BLAS.dot(length(r), r, 1, vr, 1)
         end
         logdetθ₂ = logdet(θ₂)
         return   θ₁ + logdetθ₂ + θ₃ + c, β, θ₂, θ₃
