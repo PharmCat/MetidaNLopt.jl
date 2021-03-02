@@ -14,8 +14,10 @@ transform!(df0, :formulation=> categorical, renamecols=false)
     random = VarEffect(@covstr(formulation|subject), CSH),
     repeated = VarEffect(@covstr(formulation|subject), DIAG),
     )
-    fit!(lmm; solver = :nlopt)
+    fit!(lmm; solver = :nlopt, rholinkf = :sigm, f_tol=1e-16, x_tol=1e-16)
+    #Metida.fit_nlopt!(lmm; solver = :nlopt, rholinkf = :sigm, f_tol=0.0, x_tol = 0.0, f_rtol =0.0, x_rtol =1e-18)
+    #Metida.m2logreml(lmm) ≈ 10.065239006121315
     #10.065239006121315
     #10.065456008797781
-    @test lmm.result.reml       ≈ 10.067653035572647 atol=1E-6
+    @test Metida.m2logreml(lmm) ≈ 10.065241064600908 atol=1E-6
 end

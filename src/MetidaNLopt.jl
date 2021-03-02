@@ -35,9 +35,11 @@ module MetidaNLopt
         varlinkf = :exp,
         rholinkf = :sigm,
         aifirst = false,
-        g_tol = 1e-12,
-        x_tol = 1e-12,
-        f_tol = 1e-12,
+        g_tol = 1e-16,
+        x_tol = 1e-16,
+        x_rtol = 0.0,
+        f_tol = 1e-16,
+        f_rtol = 0.0,
         hes::Bool = false,
         init = nothing,
         io = stdout) where T
@@ -74,9 +76,9 @@ module MetidaNLopt
         ############################################################################
         #COBYLA
         opt = NLopt.Opt(:LN_BOBYQA,  thetalength(lmm))
-        NLopt.ftol_rel!(opt, 0.0)
+        NLopt.ftol_rel!(opt, f_rtol)
         NLopt.ftol_abs!(opt, f_tol)
-        NLopt.xtol_rel!(opt, 0.0)
+        NLopt.xtol_rel!(opt, x_rtol)
         NLopt.xtol_abs!(opt, x_tol)
         #opt.lower_bounds = lb::Union{AbstractVector,Real}
         #opt.upper_bounds = ub::Union{AbstractVector,Real}
@@ -121,6 +123,11 @@ module MetidaNLopt
             end
         end
         lmm
+    end
+
+    function reml_sweep_β_nlopt(lmm, θ::Vector{T}) where T
+        data    = LMMDataViews(lmm)
+        reml_sweep_β_nlopt(lmm, data, θ)
     end
 
     function reml_sweep_β_nlopt(lmm, data::AbstractLMMDataBlocks, θ::Vector{T}) where T
