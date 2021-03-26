@@ -1,7 +1,7 @@
 name = "MetidaNLopt"
 uuid = "4e1362ca-e5a0-4237-9ffd-bca39e5440e3"
 authors = ["Vladimir Arnautov <mail@pharmcat.net>"]
-version = "0.2.1"
+version = "0.3.0"
 
 [deps]
 
@@ -13,7 +13,7 @@ Reexport = "189a3867-3050-52da-a836-e630ba90ab69"
 
 [compat]
 
-Metida = "0.6"
+Metida = "0.9"
 NLopt = "0.6"
 ForwardDiff = "0.10"
 Reexport = "0.2, 1"
