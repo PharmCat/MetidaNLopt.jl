@@ -1,8 +1,8 @@
 module MetidaNLopt
 
-    using NLopt, ForwardDiff, LinearAlgebra, Reexport
+    using NLopt, LinearAlgebra, Reexport
     @reexport using Metida
-    import Metida: LMM, AbstractLMMDataBlocks, LMMDataViews, initvar, thetalength,
+    import Metida: ForwardDiff, LMM, AbstractLMMDataBlocks, LMMDataViews, initvar, thetalength,
     varlinkrvecapply!, varlinkvecapply,
     lmmlog!, LMMLogMsg, fit_nlopt!, rmat_base_inc!, zgz_base_inc!, logerror!, reml_sweep_β
 
