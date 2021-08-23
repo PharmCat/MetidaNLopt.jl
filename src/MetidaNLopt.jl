@@ -26,6 +26,7 @@ module MetidaNLopt
 
         if lmm.result.fit lmmlog!(io, lmm, verbose, LMMLogMsg(:INFO, "Refit model...")) end
         lmm.result.fit = false
+        qrdrlim = 1e-8
 
         # Optimization function
         if solver == :nlopt
@@ -81,13 +82,11 @@ module MetidaNLopt
         opt.lower_bounds = lb
         opt.upper_bounds = ub
         #-----------------------------------------------------------------------
-        #obj = (x,y) -> optfunc(lmm, data, varlinkvecapply(x, lmm.covstr.ct; rholinkf = rholinkf))[1]
         obj = (x,y) -> optfunc(lmm, data, x)[1]
         NLopt.min_objective!(opt, obj)
         # Optimization object
         lmm.result.optim = NLopt.optimize!(opt, θ)
         # Theta (θ) vector
-        #lmm.result.theta  = varlinkvecapply(lmm.result.optim[2], lmm.covstr.ct)
         lmm.result.theta  = lmm.result.optim[2]
         lmmlog!(io, lmm, verbose, LMMLogMsg(:INFO, "Resulting θ: "*string(lmm.result.theta)))
         # -2 LogREML, β, iC
@@ -120,11 +119,11 @@ module MetidaNLopt
             end
             qrd = qr(lmm.result.h, Val(true))
             for i = 1:length(lmm.result.theta)
-                if abs(qrd.R[i,i]) < 1E-8
+                if abs(qrd.R[i,i]) < qrdrlim
                     if lmm.covstr.ct[qrd.jpvt[i]] == :var
-                        lmmlog!(io, lmm, verbose, LMMLogMsg(:WARN, "Hessian parameter (variation) QR.R diagonal value ($(qrd.jpvt[i])) is less than 1e-10."))
+                        lmmlog!(io, lmm, verbose, LMMLogMsg(:WARN, "Hessian parameter (variation) QR.R diagonal value ($(qrd.jpvt[i])) is less than $qrdrlim."))
                     elseif lmm.covstr.ct[qrd.jpvt[i]] == :rho
-                        lmmlog!(io, lmm, verbose, LMMLogMsg(:WARN, "Hessian parameter (rho) QR.R diagonal value ($(qrd.jpvt[i])) is less than 1e-10."))
+                        lmmlog!(io, lmm, verbose, LMMLogMsg(:WARN, "Hessian parameter (rho) QR.R diagonal value ($(qrd.jpvt[i])) is less than $qrdrlim."))
                     end
                 end
             end
