@@ -22,9 +22,17 @@ module MetidaNLopt
         f_rtol = -Inf,
         hes::Bool = false,
         init = nothing,
+        refitinit = false,
         io = stdout) where T
 
-        if lmm.result.fit lmmlog!(io, lmm, verbose, LMMLogMsg(:INFO, "Refit model...")) end
+        if lmm.result.fit
+            if length(lmm.log) > 0 deleteat!(lmm.log, 1:length(lmm.log)) end
+            lmmlog!(io, lmm, verbose, LMMLogMsg(:INFO, "Refit model..."))
+            if refitinit
+                lmmlog!(io, lmm, verbose, LMMLogMsg(:INFO, "Using previous initial parameters."))
+                init = lmm.result.theta
+            end
+        end
         lmm.result.fit = false
         qrdrlim = 1e-8
 
@@ -91,6 +99,7 @@ module MetidaNLopt
         lmmlog!(io, lmm, verbose, LMMLogMsg(:INFO, "Resulting θ: "*string(lmm.result.theta)))
         # -2 LogREML, β, iC
         lmm.result.reml, lmm.result.beta, iC, θ₃, noerrors = optfunc(lmm, data, lmm.result.theta)
+        if !noerrors LMMLogMsg(:ERROR, "Last optimization step was not accurate. Results can be wrong!") end
         if !isnan(lmm.result.reml) && !isinf(lmm.result.reml) && noerrors
             # Variance-vovariance matrix of β
             lmm.result.c            = inv(iC)
@@ -135,7 +144,20 @@ module MetidaNLopt
         lmm
     end
 
-
+    function logdet_(C::Cholesky, noerror)
+        dd = zero(real(eltype(C)))
+        @inbounds for i in 1:size(C.factors,1)
+            v = real(C.factors[i,i])
+            if v > 0
+                dd += log(v)
+            else
+                C.factors[i,i] *= -1e-8
+                dd += log(real(C.factors[i,i]+4eps()))
+                noerror = false
+            end
+        end
+        dd + dd, noerror # instead of 2.0dd which can change the type
+    end
 
     function reml_sweep_β_nlopt(lmm, θ::Vector{T}) where T
         data    = LMMDataViews(lmm)
@@ -155,10 +177,10 @@ module MetidaNLopt
         β             = Vector{T}(undef, lmm.rankx)
         A             = Vector{Matrix{T}}(undef, n)
         logdetθ₂      = zero(T)
-        try
+        noerror       = true
             l = Base.Threads.SpinLock()
             #l = Base.Threads.ReentrantLock()
-            @inbounds Base.Threads.@threads  for i = 1:n
+            @inbounds Base.Threads.@threads for i = 1:n
                 q    = length(lmm.covstr.vcovblock[i])
                 qswm = q + lmm.rankx
                 V   = zeros(T, q, q)
@@ -169,7 +191,8 @@ module MetidaNLopt
                 A[i] = LinearAlgebra.LAPACK.potrf!('U', V)[1]
                 vX   = LinearAlgebra.LAPACK.potrs!('U', A[i], copy(data.xv[i]))
                 vy   = LinearAlgebra.LAPACK.potrs!('U', A[i], copy(data.yv[i]))
-                θ₁ld = logdet(Cholesky(A[i], 'U', 0))
+                # Check matrix and make it avialible for logdet computation
+                θ₁ld, noerror = logdet_(Cholesky(A[i], 'U', 0), noerror)
                 lock(l) do
                     θ₁  += θ₁ld
                     mul!(θ₂tc, data.xv[i]', vX, one(T), one(T))
@@ -190,15 +213,11 @@ module MetidaNLopt
                 lock(l) do
                     θ₃  += rvr
                 end
-            #θ₃  += BLAS.dot(length(r), r, 1, vr, 1)
+                #θ₃  += BLAS.dot(length(r), r, 1, vr, 1)
             end
             ldθ₂ = LinearAlgebra.LAPACK.potrf!('U', copy(θ₂))[1]
-            logdetθ₂ = logdet(Cholesky(ldθ₂, 'U', 0))
-        catch e
-            logerror!(e, lmm)
-            return (Inf, nothing, nothing, nothing, false)
-        end
-        return   θ₁ + logdetθ₂ + θ₃ + c, β, θ₂, θ₃, true
+            logdetθ₂, noerror = logdet_(Cholesky(ldθ₂, 'U', 0), noerror)
+        return   θ₁ + logdetθ₂ + θ₃ + c, β, θ₂, θ₃, noerror
     end
 
 end # module
