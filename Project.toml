@@ -1,7 +1,7 @@
 name = "MetidaNLopt"
 uuid = "4e1362ca-e5a0-4237-9ffd-bca39e5440e3"
 authors = ["Vladimir Arnautov <mail@pharmcat.net>"]
-version = "0.3.1"
+version = "0.3.2"
 
 [deps]
 

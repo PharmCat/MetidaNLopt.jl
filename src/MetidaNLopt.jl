@@ -156,7 +156,9 @@ module MetidaNLopt
         A             = Vector{Matrix{T}}(undef, n)
         logdetθ₂      = zero(T)
         try
-            @inbounds @simd for i = 1:n
+            l = Base.Threads.SpinLock()
+            #l = Base.Threads.ReentrantLock()
+            @inbounds Base.Threads.@threads  for i = 1:n
                 q    = length(lmm.covstr.vcovblock[i])
                 qswm = q + lmm.rankx
                 V   = zeros(T, q, q)
@@ -165,13 +167,14 @@ module MetidaNLopt
             #-------------------------------------------------------------------
             # Cholesky
                 A[i] = LinearAlgebra.LAPACK.potrf!('U', V)[1]
-
-                θ₁  += logdet(Cholesky(A[i], 'U', 0))
-                #θ₁  += sum(log.(diag(A[i])))*2
                 vX   = LinearAlgebra.LAPACK.potrs!('U', A[i], copy(data.xv[i]))
                 vy   = LinearAlgebra.LAPACK.potrs!('U', A[i], copy(data.yv[i]))
-                mul!(θ₂tc, data.xv[i]', vX, one(T), one(T))
-                mul!(βtc, data.xv[i]', vy, one(T), one(T))
+                θ₁ld = logdet(Cholesky(A[i], 'U', 0))
+                lock(l) do
+                    θ₁  += θ₁ld
+                    mul!(θ₂tc, data.xv[i]', vX, one(T), one(T))
+                    mul!(βtc, data.xv[i]', vy, one(T), one(T))
+                end
             #-------------------------------------------------------------------
             end
         # Beta calculation
@@ -179,15 +182,18 @@ module MetidaNLopt
             LinearAlgebra.LAPACK.potrf!('U', θ₂tc)
             copyto!(β, LinearAlgebra.LAPACK.potrs!('U', θ₂tc, βtc))
         # θ₃ calculation
-        @inbounds @simd for i = 1:n
+            @inbounds Base.Threads.@threads for i = 1:n
             #r    = LinearAlgebra.BLAS.gemv!('N', -one(T), data.xv[i], βtc, one(T), copy(data.yv[i]))
-            r    = mul!(copy(data.yv[i]), data.xv[i], βtc, -one(T), one(T))
-            vr   = LinearAlgebra.LAPACK.potrs!('U', A[i], copy(r))
-            θ₃  += r'*vr
+                r    = mul!(copy(data.yv[i]), data.xv[i], βtc, -one(T), one(T))
+                vr   = LinearAlgebra.LAPACK.potrs!('U', A[i], copy(r))
+                rvr  = r'*vr
+                lock(l) do
+                    θ₃  += rvr
+                end
             #θ₃  += BLAS.dot(length(r), r, 1, vr, 1)
-        end
-        ldθ₂ = LinearAlgebra.LAPACK.potrf!('U', copy(θ₂))[1]
-        logdetθ₂ = logdet(Cholesky(ldθ₂, 'U', 0))
+            end
+            ldθ₂ = LinearAlgebra.LAPACK.potrf!('U', copy(θ₂))[1]
+            logdetθ₂ = logdet(Cholesky(ldθ₂, 'U', 0))
         catch e
             logerror!(e, lmm)
             return (Inf, nothing, nothing, nothing, false)
