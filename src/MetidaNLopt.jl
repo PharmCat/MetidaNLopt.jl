@@ -99,7 +99,7 @@ module MetidaNLopt
         lmmlog!(io, lmm, verbose, LMMLogMsg(:INFO, "Resulting θ: "*string(lmm.result.theta)))
         # -2 LogREML, β, iC
         lmm.result.reml, lmm.result.beta, iC, θ₃, noerrors = optfunc(lmm, data, lmm.result.theta)
-        if !noerrors LMMLogMsg(:ERROR, "Last optimization step was not accurate. Results can be wrong!") end
+        if !noerrors LMMLogMsg(:ERROR, "The last optimization step wasn't accurate. Results can be wrong!") end
         if !isnan(lmm.result.reml) && !isinf(lmm.result.reml) && noerrors
             # Variance-vovariance matrix of β
             lmm.result.c            = inv(iC)
@@ -156,7 +156,7 @@ module MetidaNLopt
                 noerror = false
             end
         end
-        dd + dd, noerror # instead of 2.0dd which can change the type
+        dd + dd, noerror
     end
 
     function reml_sweep_β_nlopt(lmm, θ::Vector{T}) where T
