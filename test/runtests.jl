@@ -12,6 +12,8 @@ transform!(df0, :formulation=> categorical, renamecols=false)
 
 ftdf         = CSV.File(joinpath(dirname(pathof(Metida)),"..","test","csv","1fptime.csv"); types = [String, String, Float64, Float64]) |> DataFrame
 
+ftdf2        = CSV.File(joinpath(dirname(pathof(Metida)),"..","test","csv","1freparma.csv"); types = [String, String, Float64, Float64]) |> DataFrame
+
 ftdf3        = CSV.File(joinpath(dirname(pathof(Metida)),"..","test","csv","2f2rand.csv"); types =
 [String,  Float64, Float64, String, String, String, String, String]) |> DataFrame
 
@@ -50,12 +52,24 @@ ftdf3        = CSV.File(joinpath(dirname(pathof(Metida)),"..","test","csv","2f2r
     Metida.fit!(lmm; solver = :nlopt)
     @test Metida.m2logreml(lmm) ≈ 1300.1807598168923 atol=1E-6
 
+    lmm = Metida.LMM(@formula(response ~ 1 + factor*time), ftdf2;
+    repeated = Metida.VarEffect(Metida.@covstr(time|subject&factor), Metida.ARMA),
+    )
+    Metida.fit!(lmm; solver = :nlopt, f_tol=1e-16, x_tol=1e-16)
+    @test Metida.m2logreml(lmm) ≈ 715.4528559688382 atol = 1E-6
 
     lmm = Metida.LMM(@formula(response ~ 1 + factor), ftdf3; contrasts=Dict(:factor => DummyCoding(; base=1.0)),
     random = [Metida.VarEffect(Metida.@covstr(r1|subject), Metida.CS), Metida.VarEffect(Metida.@covstr(r2|subject), Metida.CS)],
     )
     Metida.fit!(lmm; solver = :nlopt, f_tol=1e-16, x_tol=1e-16)
     @test Metida.m2logreml(lmm)  ≈ 710.4250214813896 atol=1E-8
+
+    lmm = Metida.LMM(@formula(response ~ 1 + factor), ftdf3; contrasts=Dict(:factor => DummyCoding(; base=1.0)),
+    random = Metida.VarEffect(Metida.@covstr(r1|subject), Metida.AR),
+    repeated = Metida.VarEffect(Metida.@covstr(p|subject), Metida.DIAG),
+    )
+    Metida.fit!(lmm; solver = :nlopt, f_tol=1e-10, x_tol=1e-10)
+    @test Metida.m2logreml(lmm)  ≈ 698.8792511057682 atol=1E-8
 
     lmm = Metida.LMM(@formula(response ~ 1 + factor), ftdf3; contrasts=Dict(:factor => DummyCoding(; base=1.0)),
     random = Metida.VarEffect(Metida.@covstr(p|r1&r2), Metida.ARMA),
