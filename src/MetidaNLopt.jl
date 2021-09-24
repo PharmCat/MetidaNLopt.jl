@@ -1,6 +1,6 @@
 module MetidaNLopt
 
-    using NLopt, LinearAlgebra, Reexport
+    using NLopt, LinearAlgebra, Reexport, Polyester
     @reexport using Metida
     import Metida: ForwardDiff, LMM, AbstractLMMDataBlocks, LMMDataViews, initvar, thetalength,
     varlinkrvecapply!, varlinkvecapply,
@@ -179,34 +179,61 @@ module MetidaNLopt
         A             = Vector{Matrix{T}}(undef, n)
         logdetθ₂      = zero(T)
         noerror       = true
-            l = Base.Threads.SpinLock()
+            #l = Base.Threads.SpinLock()
             #l = Base.Threads.ReentrantLock()
-            @inbounds Base.Threads.@threads for i = 1:n
-                q    = length(lmm.covstr.vcovblock[i])
-                qswm = q + lmm.rankx
-                V   = zeros(T, q, q)
-                zgz_base_inc!(V, θ, lmm.covstr, lmm.covstr.vcovblock[i], lmm.covstr.sblock[i])
-                rmat_base_inc!(V, θ[lmm.covstr.tr[end]], lmm.covstr, lmm.covstr.vcovblock[i], lmm.covstr.sblock[i])
+            ncore     = min(Polyester.num_cores(), n)
+            accθ₁     = zeros(T, ncore)
+            accθ₂     = Vector{Matrix{T}}(undef, ncore)
+            accβm     = Vector{Vector{T}}(undef, ncore)
+            erroracc  = trues(ncore)
+            d, r = divrem(n, Polyester.num_cores())
+            @batch for t = 1:ncore
+
+            #@inbounds Base.Threads.@threads for i = 1:n
+
+                offset = min(t-1, r) + (t-1)*d
+                accθ₂[t] = zeros(T, lmm.rankx, lmm.rankx)
+                accβm[t] = zeros(T, lmm.rankx)
+                @inbounds for j ∈ 1:d+(t ≤ r)
+                    i =  offset + j
+
+                    q    = length(lmm.covstr.vcovblock[i])
+                    qswm = q + lmm.rankx
+                    V   = zeros(T, q, q)
+                    zgz_base_inc!(V, θ, lmm.covstr, lmm.covstr.vcovblock[i], lmm.covstr.sblock[i])
+                    rmat_base_inc!(V, θ[lmm.covstr.tr[end]], lmm.covstr, lmm.covstr.vcovblock[i], lmm.covstr.sblock[i])
             #-------------------------------------------------------------------
             # Cholesky
-                A[i], info = LinearAlgebra.LAPACK.potrf!('U', V)
-                vX   = LinearAlgebra.LAPACK.potrs!('U', A[i], copy(data.xv[i]))
-                vy   = LinearAlgebra.LAPACK.potrs!('U', A[i], copy(data.yv[i]))
+                    Ai, info = LinearAlgebra.LAPACK.potrf!('U', V)
+                    A[i] = Ai
+                    vX   = LinearAlgebra.LAPACK.potrs!('U', A[i], copy(data.xv[i]))
+                    vy   = LinearAlgebra.LAPACK.potrs!('U', A[i], copy(data.yv[i]))
                 # Check matrix and make it avialible for logdet computation
-                if info == 0
-                    θ₁ld = logdet(Cholesky(A[i], 'U', 0))
-                    ne = true
-                else
-                    θ₁ld, ne = logdet_(Cholesky(A[i], 'U', 0))
-                end
-                lock(l) do
-                    if ne == false noerror = false end
-                    θ₁  += θ₁ld
-                    mul!(θ₂tc, data.xv[i]', vX, one(T), one(T))
-                    mul!(βtc, data.xv[i]', vy, one(T), one(T))
+                    if info == 0
+                        θ₁ld = logdet(Cholesky(A[i], 'U', 0))
+                        ne = true
+                    else
+                        θ₁ld, ne = logdet_(Cholesky(A[i], 'U', 0))
+                    end
+                    if ne == false erroracc[t] = false end
+                    accθ₁[t]  += θ₁ld
+                    mul!(accθ₂[t], data.xv[i]', vX, one(T), one(T))
+                    mul!(accβm[t], data.xv[i]', vy, one(T), one(T))
+                    #=
+                    lock(l) do
+                        if ne == false noerror = false end
+                        θ₁  += θ₁ld
+                        mul!(θ₂tc, data.xv[i]', vX, one(T), one(T))
+                        mul!(βtc, data.xv[i]', vy, one(T), one(T))
+                    end
+                    =#
                 end
             #-------------------------------------------------------------------
             end
+            θ₁ = sum(accθ₁)
+            map(x->θ₂tc .+= x, accθ₂)
+            map(x->βtc .+= x, accβm)
+            noerror = all(erroracc)
         # Beta calculation
             copyto!(θ₂, θ₂tc)
             LinearAlgebra.LAPACK.potrf!('U', θ₂tc)
