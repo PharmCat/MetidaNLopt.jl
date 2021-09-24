@@ -49,7 +49,7 @@ ftdf3        = CSV.File(joinpath(dirname(pathof(Metida)),"..","test","csv","2f2r
     lmm = Metida.LMM(@formula(response ~1 + factor*time), ftdf;
     random = Metida.VarEffect(Metida.@covstr(1 + time|subject&factor), Metida.CSH),
     )
-    Metida.fit!(lmm; solver = :nlopt)
+    Metida.fit!(lmm; solver = :nlopt, f_tol=1e-16, x_tol=1e-16)
     @test Metida.m2logreml(lmm) ≈ 1300.1807598168923 atol=1E-6
 
     lmm = Metida.LMM(@formula(response ~ 1 + factor*time), ftdf2;
