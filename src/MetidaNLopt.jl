@@ -1,10 +1,10 @@
 module MetidaNLopt
 
-    using NLopt, LinearAlgebra, Reexport, Polyester
+    using NLopt, LinearAlgebra, Reexport
     @reexport using Metida
     import Metida: ForwardDiff, LMM, AbstractLMMDataBlocks, LMMDataViews, initvar, thetalength,
-    varlinkrvecapply!, varlinkvecapply,
-    lmmlog!, LMMLogMsg, fit_nlopt!, rmat_base_inc!, zgz_base_inc!, logerror!, reml_sweep_β
+    varlinkrvecapply!, varlinkvecapply, num_cores, METIDA_SETTINGS,
+    lmmlog!, LMMLogMsg, fit_nlopt!, rmat_base_inc!, zgz_base_inc!, reml_sweep_β
 
     reml_sweep_β_cuda(args...) = error("MetidaCu not found. \n - Run `using MetidaCu` before.")
     cudata(args...) = error("MetidaCu not found. \n - Run `using MetidaCu` before.")
@@ -112,7 +112,7 @@ module MetidaNLopt
             end
         end
         # Check G
-        if lmm.covstr.random[1].covtype.s != :ZERO
+        if lmm.covstr.random[1].covtype.z
             for i = 1:length(lmm.covstr.random)
                 dg = det(gmatrix(lmm, i))
                 if dg < 1e-8 lmmlog!(io, lmm, verbose, LMMLogMsg(:WARN, "det(G) of random effect $(i) is less 1e-08.")) end
@@ -172,26 +172,24 @@ module MetidaNLopt
         #---------------------------------------------------------------------------
         θ₁            = zero(T)
         θ₂            = zeros(T, lmm.rankx, lmm.rankx)
-        θ₂tc          = zeros(T, lmm.rankx, lmm.rankx)
+        #θ₂tc          = zeros(T, lmm.rankx, lmm.rankx)
         θ₃            = zero(T)
-        βtc           = zeros(T, lmm.rankx)
+        #βtc           = zeros(T, lmm.rankx)
         β             = Vector{T}(undef, lmm.rankx)
         A             = Vector{Matrix{T}}(undef, n)
         logdetθ₂      = zero(T)
         noerror       = true
-            #l = Base.Threads.SpinLock()
-            #l = Base.Threads.ReentrantLock()
-            ncore     = min(Polyester.num_cores(), n)
+
+            ncore     = min(num_cores(), n, METIDA_SETTINGS[:MAX_THREADS])
+
             accθ₁     = zeros(T, ncore)
             accθ₂     = Vector{Matrix{T}}(undef, ncore)
             accβm     = Vector{Vector{T}}(undef, ncore)
             erroracc  = trues(ncore)
-            d, r = divrem(n, Polyester.num_cores())
-            @batch for t = 1:ncore
+            d, r = divrem(n, ncore)
+            Base.Threads.@threads  for t = 1:ncore
 
-            #@inbounds Base.Threads.@threads for i = 1:n
-
-                offset = min(t-1, r) + (t-1)*d
+                offset   = min(t-1, r) + (t-1)*d
                 accθ₂[t] = zeros(T, lmm.rankx, lmm.rankx)
                 accβm[t] = zeros(T, lmm.rankx)
                 @inbounds for j ∈ 1:d+(t ≤ r)
@@ -199,7 +197,7 @@ module MetidaNLopt
 
                     q    = length(lmm.covstr.vcovblock[i])
                     qswm = q + lmm.rankx
-                    V   = zeros(T, q, q)
+                    V    = zeros(T, q, q)
                     zgz_base_inc!(V, θ, lmm.covstr, lmm.covstr.vcovblock[i], lmm.covstr.sblock[i])
                     rmat_base_inc!(V, θ[lmm.covstr.tr[end]], lmm.covstr, lmm.covstr.vcovblock[i], lmm.covstr.sblock[i])
             #-------------------------------------------------------------------
@@ -219,20 +217,15 @@ module MetidaNLopt
                     accθ₁[t]  += θ₁ld
                     mul!(accθ₂[t], data.xv[i]', vX, one(T), one(T))
                     mul!(accβm[t], data.xv[i]', vy, one(T), one(T))
-                    #=
-                    lock(l) do
-                        if ne == false noerror = false end
-                        θ₁  += θ₁ld
-                        mul!(θ₂tc, data.xv[i]', vX, one(T), one(T))
-                        mul!(βtc, data.xv[i]', vy, one(T), one(T))
-                    end
-                    =#
+
                 end
             #-------------------------------------------------------------------
             end
-            θ₁ = sum(accθ₁)
-            map(x->θ₂tc .+= x, accθ₂)
-            map(x->βtc .+= x, accβm)
+            θ₁   = sum(accθ₁)
+            θ₂tc = sum(accθ₂)
+            βtc  = sum(accβm)
+            #map(x->θ₂tc .+= x, accθ₂)
+            #map(x->βtc .+= x, accβm)
             noerror = all(erroracc)
         # Beta calculation
             copyto!(θ₂, θ₂tc)
@@ -243,8 +236,7 @@ module MetidaNLopt
             #r    = LinearAlgebra.BLAS.gemv!('N', -one(T), data.xv[i], βtc, one(T), copy(data.yv[i]))
                 r    = mul!(copy(data.yv[i]), data.xv[i], βtc, -one(T), one(T))
                 vr   = LinearAlgebra.LAPACK.potrs!('U', A[i], copy(r))
-                θ₃  += r'*vr
-
+                θ₃  += dot(r, vr)
                 #θ₃  += BLAS.dot(length(r), r, 1, vr, 1)
             end
             ldθ₂ = LinearAlgebra.LAPACK.potrf!('U', copy(θ₂))[1]
