@@ -43,7 +43,7 @@ ftdf3        = CSV.File(joinpath(dirname(pathof(Metida)),"..","test","csv","2f2r
     )
     Metida.fit!(lmm; solver = :nlopt, f_tol=1e-16, x_tol=1e-16,
     )
-    @test Metida.m2logreml(lmm) ≈ 8.740095378772942 atol=1E-8
+    @test Metida.m2logreml(lmm) ≈ 8.740095378772942 atol=1E-6
 
 
     lmm = Metida.LMM(@formula(response ~1 + factor*time), ftdf;
@@ -62,26 +62,26 @@ ftdf3        = CSV.File(joinpath(dirname(pathof(Metida)),"..","test","csv","2f2r
     random = [Metida.VarEffect(Metida.@covstr(r1|subject), Metida.CS), Metida.VarEffect(Metida.@covstr(r2|subject), Metida.CS)],
     )
     Metida.fit!(lmm; solver = :nlopt, f_tol=1e-16, x_tol=1e-16)
-    @test Metida.m2logreml(lmm)  ≈ 710.4250214813896 atol=1E-8
+    @test Metida.m2logreml(lmm)  ≈ 710.4250214813896 atol=1E-6
 
     lmm = Metida.LMM(@formula(response ~ 1 + factor), ftdf3; contrasts=Dict(:factor => DummyCoding(; base=1.0)),
     random = Metida.VarEffect(Metida.@covstr(r1|subject), Metida.AR),
     repeated = Metida.VarEffect(Metida.@covstr(p|subject), Metida.DIAG),
     )
     Metida.fit!(lmm; solver = :nlopt, f_tol=1e-10, x_tol=1e-10)
-    @test Metida.m2logreml(lmm)  ≈ 698.8792511057682 atol=1E-8
+    @test Metida.m2logreml(lmm)  ≈ 698.8792511057682 atol=1E-6
 
     lmm = Metida.LMM(@formula(response ~ 1 + factor), ftdf3; contrasts=Dict(:factor => DummyCoding(; base=1.0)),
     random = Metida.VarEffect(Metida.@covstr(p|r1&r2), Metida.ARMA),
     )
     Metida.fit!(lmm, solver = :nlopt)
-    @test Metida.m2logreml(lmm)  ≈ 913.9176298311813 atol=1E-8
+    @test Metida.m2logreml(lmm)  ≈ 913.9176298311813 atol=1E-6
 
     lmm = Metida.LMM(@formula(response ~ 1 + factor), ftdf3;
     random = Metida.VarEffect(Metida.@covstr(1 + r1 + r2|subject), Metida.TOEPHP(3); coding = Dict(:r1 => DummyCoding(), :r2 => DummyCoding())),
     )
     Metida.fit!(lmm, solver = :nlopt, f_tol=1e-16, x_tol=1e-16)
-    @test Metida.m2logreml(lmm)  ≈ 705.9946274598822 atol=1E-8
+    @test Metida.m2logreml(lmm)  ≈ 705.9946274598822 atol=1E-6
 
 
     lmm = Metida.LMM(@formula(response ~ 1 + factor), ftdf3;
@@ -89,5 +89,5 @@ ftdf3        = CSV.File(joinpath(dirname(pathof(Metida)),"..","test","csv","2f2r
     repeated = Metida.VarEffect(Metida.@covstr(p|subject), Metida.TOEPP(3)),
     )
     Metida.fit!(lmm, solver = :nlopt, f_tol=1e-16, x_tol=1e-16)
-    @test Metida.m2logreml(lmm)  ≈ 773.9575538254085 atol=1E-8
+    @test Metida.m2logreml(lmm)  ≈ 773.9575538254085 atol=1E-6
 end
