@@ -126,14 +126,10 @@ module MetidaNLopt
             if !isposdef(Symmetric(lmm.result.h))
                 lmmlog!(io, lmm, verbose, LMMLogMsg(:WARN, "Hessian is not positive definite."))
             end
-            qrd = qr(lmm.result.h, Val(true))
+            qrd = qr(lmm.result.h)
             for i = 1:length(lmm.result.theta)
                 if abs(qrd.R[i,i]) < qrdrlim
-                    if lmm.covstr.ct[qrd.jpvt[i]] == :var
-                        lmmlog!(io, lmm, verbose, LMMLogMsg(:WARN, "Hessian parameter (variation) QR.R diagonal value ($(qrd.jpvt[i])) is less than $qrdrlim."))
-                    elseif lmm.covstr.ct[qrd.jpvt[i]] == :rho
-                        lmmlog!(io, lmm, verbose, LMMLogMsg(:WARN, "Hessian parameter (rho) QR.R diagonal value ($(qrd.jpvt[i])) is less than $qrdrlim."))
-                    end
+                    lmmlog!(io, lmm, verbose, LMMLogMsg(:WARN, "Hessian parameter ($(lmm.covstr.ct[i])) QR.R diagonal value ($(i)) is less than $qrdrlim."))
                 end
             end
         end
