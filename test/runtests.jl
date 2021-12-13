@@ -90,4 +90,12 @@ ftdf3        = CSV.File(joinpath(dirname(pathof(Metida)),"..","test","csv","2f2r
     )
     Metida.fit!(lmm, solver = :nlopt, f_tol=1e-16, x_tol=1e-16)
     @test Metida.m2logreml(lmm)  ≈ 773.9575538254085 atol=1E-6
+
+
+    lmm = Metida.LMM(@formula(response ~ 1), ftdf;
+    repeated = Metida.VarEffect(Metida.@covstr(response+time|subject), Metida.SPEXP),
+    )
+    Metida.fit!(lmm, solver = :nlopt, f_tol=1e-16, x_tol=1e-16)
+    #SPSS 1528.715
+    @test Metida.m2logreml(lmm) ≈ 1528.7150702624508 atol=1E-6
 end

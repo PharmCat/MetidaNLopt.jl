@@ -71,9 +71,11 @@ module MetidaNLopt
             θ                      .= initθ
             for i = 1:length(θ)
                 if lmm.covstr.ct[i] == :rho
-                    θ[i] = 0.0
-                    lb[i] = -1.0 + eps() * 1e4
-                    ub[i] =  1.0 - eps() * 1e4
+                    θ[i]  = 0.0
+                    lb[i] = -1.0 + eps()
+                    ub[i] =  1.0 - eps()
+                elseif lmm.covstr.ct[i] == :theta
+                    θ[i]  = 1.0
                 end
             end
             lmmlog!(io, lmm, verbose, LMMLogMsg(:INFO, "Initial θ: "*string(θ)))
