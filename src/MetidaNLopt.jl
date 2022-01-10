@@ -4,7 +4,7 @@ module MetidaNLopt
     @reexport using Metida
     import Metida: ForwardDiff, LMM, AbstractLMMDataBlocks, LMMDataViews, initvar, thetalength,
     varlinkrvecapply!, varlinkvecapply, num_cores, METIDA_SETTINGS,
-    lmmlog!, LMMLogMsg, fit_nlopt!, rmat_base_inc!, zgz_base_inc!, reml_sweep_β
+    lmmlog!, LMMLogMsg, fit_nlopt!, reml_sweep_β, vmatrix!, gmatvec
 
     reml_sweep_β_cuda(args...) = error("MetidaCu not found. \n - Run `using MetidaCu` before.")
     cudata(args...) = error("MetidaCu not found. \n - Run `using MetidaCu` before.")
@@ -39,13 +39,13 @@ module MetidaNLopt
         # Optimization function
         if solver == :nlopt
             optfunc = reml_sweep_β_nlopt
-            data    = LMMDataViews(lmm)
+            data    = lmm.dv
         elseif solver == :cuda
             optfunc = reml_sweep_β_cuda
             data    = cudata(lmm)
         elseif solver == :nloptsw
             optfunc = reml_sweep_β
-            data    = LMMDataViews(lmm)
+            data    = lmm.dv
         else
             error("Unknown solver!")
         end
@@ -57,7 +57,7 @@ module MetidaNLopt
         θ  = zeros(T, lmm.covstr.tl)
         lb = similar(θ)
         ub = similar(θ)
-        lb .= eps() * 1e4
+        lb .= eps()^2
         ub .= Inf
         if isa(init, Vector{T})
             if length(θ) == length(init)
@@ -76,6 +76,7 @@ module MetidaNLopt
                     ub[i] =  1.0 - eps()
                 elseif lmm.covstr.ct[i] == :theta
                     θ[i]  = 1.0
+                    lb[i] = -Inf
                 end
             end
             lmmlog!(io, lmm, verbose, LMMLogMsg(:INFO, "Initial θ: "*string(θ)))
@@ -176,6 +177,7 @@ module MetidaNLopt
         β             = Vector{T}(undef, lmm.rankx)
         A             = Vector{Matrix{T}}(undef, n)
         logdetθ₂      = zero(T)
+        gvec          = gmatvec(θ, lmm.covstr)
         noerror       = true
 
             ncore     = min(num_cores(), n, METIDA_SETTINGS[:MAX_THREADS])
@@ -185,7 +187,7 @@ module MetidaNLopt
             accβm     = Vector{Vector{T}}(undef, ncore)
             erroracc  = trues(ncore)
             d, r = divrem(n, ncore)
-            Base.Threads.@threads  for t = 1:ncore
+            Base.Threads.@threads for t = 1:ncore
 
                 offset   = min(t-1, r) + (t-1)*d
                 accθ₂[t] = zeros(T, lmm.rankx, lmm.rankx)
@@ -196,8 +198,9 @@ module MetidaNLopt
                     q    = length(lmm.covstr.vcovblock[i])
                     qswm = q + lmm.rankx
                     V    = zeros(T, q, q)
-                    zgz_base_inc!(V, θ, lmm.covstr, lmm.covstr.vcovblock[i], lmm.covstr.sblock[i])
-                    rmat_base_inc!(V, θ[lmm.covstr.tr[end]], lmm.covstr, lmm.covstr.vcovblock[i], lmm.covstr.sblock[i])
+                    vmatrix!(V, gvec, θ, lmm, i)
+                    #zgz_base_inc!(V, θ, lmm.covstr, lmm.covstr.vcovblock[i], lmm.covstr.sblock[i])
+                    #rmat_base_inc!(V, θ[lmm.covstr.tr[end]], lmm.covstr, lmm.covstr.vcovblock[i], lmm.covstr.sblock[i])
             #-------------------------------------------------------------------
             # Cholesky
                     Ai, info = LinearAlgebra.LAPACK.potrf!('U', V)
