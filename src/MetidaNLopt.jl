@@ -3,8 +3,8 @@ module MetidaNLopt
     using NLopt, LinearAlgebra, Reexport
     @reexport using Metida
     import Metida: ForwardDiff, LMM, AbstractLMMDataBlocks, LMMDataViews, initvar, thetalength,
-    varlinkrvecapply!, varlinkvecapply, num_cores, METIDA_SETTINGS,
-    lmmlog!, LMMLogMsg, fit_nlopt!, rmat_base_inc!, zgz_base_inc!, reml_sweep_β
+    varlinkrvecapply!, varlinkvecapply, num_cores, varlinkvecapply!,
+    lmmlog!, LMMLogMsg, fit_nlopt!, reml_sweep_β, reml_sweep_β_nlopt, vmatrix!, gmatvec
 
     reml_sweep_β_cuda(args...) = error("MetidaCu not found. \n - Run `using MetidaCu` before.")
     cudata(args...) = error("MetidaCu not found. \n - Run `using MetidaCu` before.")
@@ -12,17 +12,20 @@ module MetidaNLopt
     function Metida.fit_nlopt!(lmm::LMM{T};
         solver = :nlopt,
         verbose = :auto,
-        varlinkf = :exp,
+        varlinkf = :identity, 
         rholinkf = :sigm,
         aifirst = false,
         g_tol = 1e-16,
         x_tol = 1e-16,
-        x_rtol = -Inf,
+        x_rtol = 1e-16,
         f_tol = 1e-16,
-        f_rtol = -Inf,
+        f_rtol = 1e-16,
         hes::Bool = false,
         init = nothing,
         refitinit = false,
+        time_limit = 0,
+        optmethod = :LN_BOBYQA,
+        maxthreads = 16,
         io = stdout) where T
 
         if lmm.result.fit
@@ -39,13 +42,13 @@ module MetidaNLopt
         # Optimization function
         if solver == :nlopt
             optfunc = reml_sweep_β_nlopt
-            data    = LMMDataViews(lmm)
+            data    = lmm.dv
         elseif solver == :cuda
             optfunc = reml_sweep_β_cuda
             data    = cudata(lmm)
         elseif solver == :nloptsw
             optfunc = reml_sweep_β
-            data    = LMMDataViews(lmm)
+            data    = lmm.dv
         else
             error("Unknown solver!")
         end
@@ -57,7 +60,7 @@ module MetidaNLopt
         θ  = zeros(T, lmm.covstr.tl)
         lb = similar(θ)
         ub = similar(θ)
-        lb .= eps() * 1e4
+        lb .= eps()^2
         ub .= Inf
         if isa(init, Vector{T})
             if length(θ) == length(init)
@@ -71,31 +74,55 @@ module MetidaNLopt
             θ                      .= initθ
             for i = 1:length(θ)
                 if lmm.covstr.ct[i] == :rho
-                    θ[i]  = 0.0
-                    lb[i] = -1.0 + eps()
-                    ub[i] =  1.0 - eps()
+                    θ[i]  = 0.001
                 elseif lmm.covstr.ct[i] == :theta
                     θ[i]  = 1.0
                 end
             end
             lmmlog!(io, lmm, verbose, LMMLogMsg(:INFO, "Initial θ: "*string(θ)))
         end
+        for i = 1:length(θ)     
+            if lmm.covstr.ct[i] == :rho
+                lb[i]    = -Inf#-1.0 + eps()
+                ub[i]    =  Inf#1.0 - eps()     
+            end
+        end
         ############################################################################
         #varlinkrvecapply!(θ, lmm.covstr.ct; rholinkf = rholinkf)
         ############################################################################
-        # COBYLA BOBYQA
-        opt = NLopt.Opt(:LN_BOBYQA,  thetalength(lmm))
+        # :LN_COBYLA :LN_NELDERMEAD :LN_SBPLX  :LD_MMA  :LD_CCSAQ :LD_SLSQP :LD_LBFGS
+        # :LN_PRAXIS :LD_VAR1 :AUGLAG
+        # :LN_BOBYQA :LN_NEWUOA 
+        opt = NLopt.Opt(optmethod,  thetalength(lmm))
         NLopt.ftol_rel!(opt, f_rtol)
         NLopt.ftol_abs!(opt, f_tol)
         NLopt.xtol_rel!(opt, x_rtol)
         NLopt.xtol_abs!(opt, x_tol)
         opt.lower_bounds = lb
         opt.upper_bounds = ub
+        opt.maxtime      = time_limit
+        istep = initial_step(opt, θ)
+        for i = 1:length(θ)     
+            if lmm.covstr.ct[i] == :var
+                istep[i]    = 0.05*θ[i]
+            elseif lmm.covstr.ct[i] == :rho
+                istep[i]    = 0.1
+            end
+        end
+        opt.initial_step = istep
+        varlinkrvecapply!(θ, lmm.covstr.ct; varlinkf = varlinkf, rholinkf = rholinkf)
+        #gradf(x) = reml_sweep_β(lmm, data, varlinkvecapply(x, lmm.covstr.ct; varlinkf = varlinkf, rholinkf = rholinkf); maxthreads = maxthreads)[1]
         #-----------------------------------------------------------------------
-        obj = (x,y) -> optfunc(lmm, data, x)[1]
+        obj(x, ::Any) = begin
+            #if length(g) > 0
+            #    ForwardDiff.gradient!(g, gradf, x)
+            #end
+            optfunc(lmm, data, varlinkvecapply!(x, lmm.covstr.ct; varlinkf = varlinkf, rholinkf = rholinkf); maxthreads = maxthreads)[1] 
+        end
         NLopt.min_objective!(opt, obj)
         # Optimization object
         lmm.result.optim = NLopt.optimize!(opt, θ)
+        varlinkvecapply!(lmm.result.optim[2], lmm.covstr.ct; varlinkf = varlinkf, rholinkf = rholinkf)
         # Theta (θ) vector
         lmm.result.theta  = lmm.result.optim[2]
         lmmlog!(io, lmm, verbose, LMMLogMsg(:INFO, "Resulting θ: "*string(lmm.result.theta)))
@@ -162,7 +189,7 @@ module MetidaNLopt
         data    = LMMDataViews(lmm)
         reml_sweep_β_nlopt(lmm, data, θ)
     end
-
+#=
     function reml_sweep_β_nlopt(lmm, data::AbstractLMMDataBlocks, θ::Vector{T}) where T
         n             = length(lmm.covstr.vcovblock)
         N             = length(lmm.data.yv)
@@ -176,6 +203,7 @@ module MetidaNLopt
         β             = Vector{T}(undef, lmm.rankx)
         A             = Vector{Matrix{T}}(undef, n)
         logdetθ₂      = zero(T)
+        gvec          = gmatvec(θ, lmm.covstr)
         noerror       = true
 
             ncore     = min(num_cores(), n, METIDA_SETTINGS[:MAX_THREADS])
@@ -185,7 +213,7 @@ module MetidaNLopt
             accβm     = Vector{Vector{T}}(undef, ncore)
             erroracc  = trues(ncore)
             d, r = divrem(n, ncore)
-            Base.Threads.@threads  for t = 1:ncore
+            Base.Threads.@threads for t = 1:ncore
 
                 offset   = min(t-1, r) + (t-1)*d
                 accθ₂[t] = zeros(T, lmm.rankx, lmm.rankx)
@@ -196,8 +224,9 @@ module MetidaNLopt
                     q    = length(lmm.covstr.vcovblock[i])
                     qswm = q + lmm.rankx
                     V    = zeros(T, q, q)
-                    zgz_base_inc!(V, θ, lmm.covstr, lmm.covstr.vcovblock[i], lmm.covstr.sblock[i])
-                    rmat_base_inc!(V, θ[lmm.covstr.tr[end]], lmm.covstr, lmm.covstr.vcovblock[i], lmm.covstr.sblock[i])
+                    vmatrix!(V, gvec, θ, lmm, i)
+                    #zgz_base_inc!(V, θ, lmm.covstr, lmm.covstr.vcovblock[i], lmm.covstr.sblock[i])
+                    #rmat_base_inc!(V, θ[lmm.covstr.tr[end]], lmm.covstr, lmm.covstr.vcovblock[i], lmm.covstr.sblock[i])
             #-------------------------------------------------------------------
             # Cholesky
                     Ai, info = LinearAlgebra.LAPACK.potrf!('U', V)
@@ -213,8 +242,8 @@ module MetidaNLopt
                     end
                     if ne == false erroracc[t] = false end
                     accθ₁[t]  += θ₁ld
-                    mul!(accθ₂[t], data.xv[i]', vX, one(T), one(T))
-                    mul!(accβm[t], data.xv[i]', vy, one(T), one(T))
+                    mul!(accθ₂[t], data.xv[i]', vX, 1, 1)
+                    mul!(accβm[t], data.xv[i]', vy, 1, 1)
 
                 end
             #-------------------------------------------------------------------
@@ -229,18 +258,19 @@ module MetidaNLopt
             copyto!(θ₂, θ₂tc)
             LinearAlgebra.LAPACK.potrf!('U', θ₂tc)
             copyto!(β, LinearAlgebra.LAPACK.potrs!('U', θ₂tc, βtc))
+        # θ₂ calculation
+            ldθ₂ = LinearAlgebra.LAPACK.potrf!('U', copy(θ₂))[1]
+            logdetθ₂, ne = logdet_(Cholesky(ldθ₂, 'U', 0))
         # θ₃ calculation
             @inbounds @simd for i = 1:n
-            #r    = LinearAlgebra.BLAS.gemv!('N', -one(T), data.xv[i], βtc, one(T), copy(data.yv[i]))
-                r    = mul!(copy(data.yv[i]), data.xv[i], βtc, -one(T), one(T))
+                #r   = LinearAlgebra.BLAS.gemv!('N', -one(T), data.xv[i], βtc, one(T), copy(data.yv[i]))
+                r    = mul!(copy(data.yv[i]), data.xv[i], βtc, -1, 1)
                 vr   = LinearAlgebra.LAPACK.potrs!('U', A[i], copy(r))
                 θ₃  += dot(r, vr)
                 #θ₃  += BLAS.dot(length(r), r, 1, vr, 1)
             end
-            ldθ₂ = LinearAlgebra.LAPACK.potrf!('U', copy(θ₂))[1]
-            logdetθ₂, ne = logdet_(Cholesky(ldθ₂, 'U', 0))
             if ne == false noerror = false end
         return   θ₁ + logdetθ₂ + θ₃ + c, β, θ₂, θ₃, noerror
     end
-
+=#
 end # module
