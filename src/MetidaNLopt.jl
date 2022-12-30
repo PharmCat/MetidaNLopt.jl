@@ -77,6 +77,7 @@ module MetidaNLopt
                     θ[i]  = 0.001
                 elseif lmm.covstr.ct[i] == :theta
                     θ[i]  = 1.0
+                    lb[i] = -Inf
                 end
             end
             lmmlog!(io, lmm, verbose, LMMLogMsg(:INFO, "Initial θ: "*string(θ)))
