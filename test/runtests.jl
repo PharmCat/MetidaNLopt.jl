@@ -27,7 +27,7 @@ ftdf3        = CSV.File(joinpath(dirname(pathof(Metida)),"..","test","csv","ftdf
     #Metida.m2logreml(lmm) ≈ 10.065239006121315
     #10.065239006121315
     #10.065456008797781
-    @test Metida.m2logreml(lmm) ≈ 10.065238692021847 atol=1E-5
+    @test Metida.m2logreml(lmm) ≈ 10.065238692021847 atol=1E-4
 
 
     lmm = LMM(@formula(var~sequence+period+formulation), df0;
