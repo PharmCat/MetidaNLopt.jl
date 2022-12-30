@@ -34,7 +34,7 @@ ftdf3        = CSV.File(joinpath(dirname(pathof(Metida)),"..","test","csv","ftdf
     repeated = VarEffect(@covstr(formulation|subject), CS),
     )
     fit!(lmm, solver = :nlopt, f_tol=1e-16, x_tol=1e-16)
-    @test Metida.m2logreml(lmm) ≈ 10.3039977509049 atol=1E-5
+    @test Metida.m2logreml(lmm) ≈ 10.3039977509049 atol=1E-4
 
     lmm = LMM(@formula(var~sequence+period+formulation), df0;
     repeated = VarEffect(@covstr(period|subject), CSH),
