@@ -22,24 +22,25 @@ ftdf3        = CSV.File(joinpath(dirname(pathof(Metida)),"..","test","csv","ftdf
     random = VarEffect(@covstr(formulation|subject), CSH),
     repeated = VarEffect(@covstr(formulation|subject), DIAG),
     )
-    fit!(lmm; solver = :nlopt, f_tol=1e-16, x_tol=1e-16, time_limit = 10)
+    fit!(lmm; solver = :nlopt, f_tol=1e-12, x_tol=1e-12, time_limit = 12)
     #Metida.fit_nlopt!(lmm; solver = :nlopt, rholinkf = :sigm, f_tol=0.0, x_tol = 0.0, f_rtol =0.0, x_rtol =1e-18)
     #Metida.m2logreml(lmm) ≈ 10.065239006121315
     #10.065239006121315
     #10.065456008797781
     @test Metida.m2logreml(lmm) ≈ 10.065238692021847 atol=1E-5
 
+
     lmm = LMM(@formula(var~sequence+period+formulation), df0;
     random = VarEffect(@covstr(formulation|subject), CSH),
     repeated = VarEffect(@covstr(formulation|subject), CS),
     )
     fit!(lmm, solver = :nlopt, f_tol=1e-16, x_tol=1e-16)
-    @test Metida.m2logreml(lmm) ≈ 10.3039977509049 atol=1E-4
+    @test Metida.m2logreml(lmm) ≈ 10.3039977509049 atol=1E-5
 
     lmm = LMM(@formula(var~sequence+period+formulation), df0;
     repeated = VarEffect(@covstr(period|subject), CSH),
     )
-    fit!(lmm; solver = :nlopt, f_tol=1E-16, x_tol=1E-16)
+    fit!(lmm; solver = :nlopt, f_tol=1E-12, x_tol=1E-12)
     @test Metida.m2logreml(lmm) ≈ 8.740095420232805 atol=1E-5
 
 
@@ -52,7 +53,7 @@ ftdf3        = CSV.File(joinpath(dirname(pathof(Metida)),"..","test","csv","ftdf
     lmm = LMM(@formula(response ~ 1 + factor*time), ftdf2;
     repeated = VarEffect(@covstr(time|subject&factor), ARMA),
     )
-    fit!(lmm; solver = :nlopt, f_tol=1E-16, x_tol=1E-16)
+    fit!(lmm; solver = :nlopt, f_tol=1E-16, x_tol=1E-16)#, optmethod = :LN_NEWUOA
     @test m2logreml(lmm) ≈ 715.4528559688382 atol = 1E-5
 
     lmm = LMM(@formula(response ~ 1 + factor), ftdf3; contrasts=Dict(:factor => DummyCoding(; base=1.0)),
