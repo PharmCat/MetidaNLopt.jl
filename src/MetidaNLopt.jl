@@ -3,8 +3,8 @@ module MetidaNLopt
     using NLopt, LinearAlgebra, Reexport
     @reexport using Metida
     import Metida: ForwardDiff, LMM, AbstractLMMDataBlocks, LMMDataViews, initvar, thetalength,
-    varlinkrvecapply!, varlinkvecapply, num_cores, METIDA_SETTINGS,
-    lmmlog!, LMMLogMsg, fit_nlopt!, reml_sweep_β, vmatrix!, gmatvec
+    varlinkrvecapply!, varlinkvecapply, num_cores, varlinkvecapply!,
+    lmmlog!, LMMLogMsg, fit_nlopt!, reml_sweep_β, reml_sweep_β_nlopt, vmatrix!, gmatvec
 
     reml_sweep_β_cuda(args...) = error("MetidaCu not found. \n - Run `using MetidaCu` before.")
     cudata(args...) = error("MetidaCu not found. \n - Run `using MetidaCu` before.")
@@ -12,17 +12,24 @@ module MetidaNLopt
     function Metida.fit_nlopt!(lmm::LMM{T};
         solver = :nlopt,
         verbose = :auto,
-        varlinkf = :exp,
+        varlinkf = :identity, 
         rholinkf = :sigm,
         aifirst = false,
-        g_tol = 1e-16,
-        x_tol = 1e-16,
-        x_rtol = -Inf,
-        f_tol = 1e-16,
-        f_rtol = -Inf,
+        g_tol = 1e-10,
+        x_tol = 1e-10,
+        x_rtol = 0,
+        f_tol = 1e-10,
+        f_rtol = 0,
         hes::Bool = false,
         init = nothing,
         refitinit = false,
+        time_limit = 0,
+        optmethod = :LN_BOBYQA,
+        maxthreads = 16,
+        dopt = :LN_NEWUOA,
+        singtol = 1e-8,
+        istepm = 0.001,
+        sstepm = 0.00001,
         io = stdout) where T
 
         if lmm.result.fit
@@ -34,8 +41,6 @@ module MetidaNLopt
             end
         end
         lmm.result.fit = false
-        qrdrlim = 1e-8
-
         # Optimization function
         if solver == :nlopt
             optfunc = reml_sweep_β_nlopt
@@ -68,12 +73,10 @@ module MetidaNLopt
             end
         else
             initθ = sqrt(initvar(lmm.data.yv, lmm.mm.m)[1])/(length(lmm.covstr.random)+1)
-            θ                      .= initθ
+            θ .= initθ
             for i = 1:length(θ)
                 if lmm.covstr.ct[i] == :rho
-                    θ[i]  = 0.0
-                    lb[i] = -1.0 + eps()
-                    ub[i] =  1.0 - eps()
+                    θ[i]  = 0.1
                 elseif lmm.covstr.ct[i] == :theta
                     θ[i]  = 1.0
                     lb[i] = -Inf
@@ -81,25 +84,75 @@ module MetidaNLopt
             end
             lmmlog!(io, lmm, verbose, LMMLogMsg(:INFO, "Initial θ: "*string(θ)))
         end
+        for i = 1:length(θ)     
+            if lmm.covstr.ct[i] == :rho
+                lb[i]    = -Inf#-1.0 + eps()
+                ub[i]    =  Inf#1.0 - eps()     
+            end
+        end
         ############################################################################
         #varlinkrvecapply!(θ, lmm.covstr.ct; rholinkf = rholinkf)
         ############################################################################
-        # COBYLA BOBYQA
-        opt = NLopt.Opt(:LN_BOBYQA,  thetalength(lmm))
+        # :LN_COBYLA :LN_NELDERMEAD :LN_SBPLX  :LD_MMA  :LD_CCSAQ :LD_SLSQP :LD_LBFGS
+        # :LN_PRAXIS :LD_VAR1 :AUGLAG
+        # :LN_BOBYQA :LN_NEWUOA 
+        opt = NLopt.Opt(optmethod, thetalength(lmm))
         NLopt.ftol_rel!(opt, f_rtol)
         NLopt.ftol_abs!(opt, f_tol)
         NLopt.xtol_rel!(opt, x_rtol)
         NLopt.xtol_abs!(opt, x_tol)
+        #opt.maxeval = 10
         opt.lower_bounds = lb
         opt.upper_bounds = ub
+        opt.maxtime      = time_limit
+        istep = similar(θ)
+        varlinkrvecapply!(θ, lmm.covstr.ct; varlinkf = varlinkf, rholinkf = rholinkf)
+        for i = 1:length(θ)     
+            if lmm.covstr.ct[i] == :var
+                istep[i]    = istepm*θ[i]
+            elseif lmm.covstr.ct[i] == :rho
+                istep[i]    = istepm*θ[i]
+            elseif lmm.covstr.ct[i] == :theta
+                istep[i]    = istepm*θ[i]
+            end
+        end
+        opt.initial_step = istep
+        counter = Dict{Symbol, Int}(:iter => 0)
+        #gradf(x) = reml_sweep_β(lmm, data, varlinkvecapply(x, lmm.covstr.ct; varlinkf = varlinkf, rholinkf = rholinkf); maxthreads = maxthreads)[1]
         #-----------------------------------------------------------------------
-        obj = (x,y) -> optfunc(lmm, data, x)[1]
+        obj(x, ::Any) = begin
+            #if length(g) > 0
+            #    ForwardDiff.gradient!(g, gradf, x)
+            #end
+            val = optfunc(lmm, data, varlinkvecapply!(x, lmm.covstr.ct; varlinkf = varlinkf, rholinkf = rholinkf); maxthreads = maxthreads)[1] 
+            if val == Inf 
+                lmmlog!(io, lmm, verbose, LMMLogMsg(:WARN, "Unstable values during optimization. Check results."))
+            end
+            counter[:iter] += 1
+            val
+        end
         NLopt.min_objective!(opt, obj)
         # Optimization object
         lmm.result.optim = NLopt.optimize!(opt, θ)
+        # Second 
+        if isa(dopt, Symbol)
+            copyto!(θ, lmm.result.optim[2])
+            opt = NLopt.Opt(dopt,  thetalength(lmm))
+            NLopt.ftol_rel!(opt, f_rtol)
+            NLopt.ftol_abs!(opt, f_tol)
+            NLopt.xtol_rel!(opt, x_rtol)
+            NLopt.xtol_abs!(opt, x_tol)
+            opt.lower_bounds = lb
+            opt.upper_bounds = ub
+            opt.maxtime      = time_limit
+            opt.initial_step = lmm.result.optim[2] .* sstepm
+            NLopt.min_objective!(opt, obj)
+            lmm.result.optim = NLopt.optimize!(opt, θ)
+        end
+        varlinkvecapply!(lmm.result.optim[2], lmm.covstr.ct; varlinkf = varlinkf, rholinkf = rholinkf)
         # Theta (θ) vector
         lmm.result.theta  = lmm.result.optim[2]
-        lmmlog!(io, lmm, verbose, LMMLogMsg(:INFO, "Resulting θ: "*string(lmm.result.theta)))
+        lmmlog!(io, lmm, verbose, LMMLogMsg(:INFO, "Resulting θ: "*string(lmm.result.theta)*", Iterations:$(counter[:iter])"))
         # -2 LogREML, β, iC
         lmm.result.reml, lmm.result.beta, iC, θ₃, noerrors = optfunc(lmm, data, lmm.result.theta)
         if !noerrors LMMLogMsg(:ERROR, "The last optimization step wasn't accurate. Results can be wrong!") end
@@ -109,7 +162,7 @@ module MetidaNLopt
             # SE
             if  !any(x-> x < 0.0, diag(lmm.result.c))
                 lmm.result.se           = sqrt.(diag(lmm.result.c)) #ERROR: DomainError with -1.9121111845919027e-54
-                if any(x-> x < 1e-8, lmm.result.se) && minimum(lmm.result.se)/maximum(lmm.result.se) < 1e-8 lmmlog!(io, lmm, verbose, LMMLogMsg(:WARN, "Some of the SE parameters is suspicious.")) end
+                if any(x-> x < singtol, lmm.result.se) && minimum(lmm.result.se)/maximum(lmm.result.se) < singtol lmmlog!(io, lmm, verbose, LMMLogMsg(:WARN, "Some of the SE parameters is suspicious.")) end
                 lmmlog!(io, lmm, verbose, LMMLogMsg(:INFO, "Model fitted."))
                 lmm.result.fit      = true
             end
@@ -118,7 +171,7 @@ module MetidaNLopt
         if lmm.covstr.random[1].covtype.z
             for i = 1:length(lmm.covstr.random)
                 dg = det(gmatrix(lmm, i))
-                if dg < 1e-8 lmmlog!(io, lmm, verbose, LMMLogMsg(:WARN, "det(G) of random effect $(i) is less 1e-08.")) end
+                if dg < singtol lmmlog!(io, lmm, verbose, LMMLogMsg(:WARN, "det(G) of random effect $(i) is less 1e-08.")) end
             end
         end
         # Check Hessian
@@ -131,8 +184,8 @@ module MetidaNLopt
             end
             qrd = qr(lmm.result.h)
             for i = 1:length(lmm.result.theta)
-                if abs(qrd.R[i,i]) < qrdrlim
-                    lmmlog!(io, lmm, verbose, LMMLogMsg(:WARN, "Hessian parameter ($(lmm.covstr.ct[i])) QR.R diagonal value ($(i)) is less than $qrdrlim."))
+                if abs(qrd.R[i,i]) < singtol
+                    lmmlog!(io, lmm, verbose, LMMLogMsg(:WARN, "Hessian parameter ($(lmm.covstr.ct[i])) QR.R diagonal value ($(i)) is less than $singtol."))
                 end
             end
         end
@@ -163,87 +216,4 @@ module MetidaNLopt
         data    = LMMDataViews(lmm)
         reml_sweep_β_nlopt(lmm, data, θ)
     end
-
-    function reml_sweep_β_nlopt(lmm, data::AbstractLMMDataBlocks, θ::Vector{T}) where T
-        n             = length(lmm.covstr.vcovblock)
-        N             = length(lmm.data.yv)
-        c             = (N - lmm.rankx)*log(2π)
-        #---------------------------------------------------------------------------
-        θ₁            = zero(T)
-        θ₂            = zeros(T, lmm.rankx, lmm.rankx)
-        #θ₂tc          = zeros(T, lmm.rankx, lmm.rankx)
-        θ₃            = zero(T)
-        #βtc           = zeros(T, lmm.rankx)
-        β             = Vector{T}(undef, lmm.rankx)
-        A             = Vector{Matrix{T}}(undef, n)
-        logdetθ₂      = zero(T)
-        gvec          = gmatvec(θ, lmm.covstr)
-        noerror       = true
-
-            ncore     = min(num_cores(), n, METIDA_SETTINGS[:MAX_THREADS])
-
-            accθ₁     = zeros(T, ncore)
-            accθ₂     = Vector{Matrix{T}}(undef, ncore)
-            accβm     = Vector{Vector{T}}(undef, ncore)
-            erroracc  = trues(ncore)
-            d, r = divrem(n, ncore)
-            Base.Threads.@threads for t = 1:ncore
-
-                offset   = min(t-1, r) + (t-1)*d
-                accθ₂[t] = zeros(T, lmm.rankx, lmm.rankx)
-                accβm[t] = zeros(T, lmm.rankx)
-                @inbounds for j ∈ 1:d+(t ≤ r)
-                    i =  offset + j
-
-                    q    = length(lmm.covstr.vcovblock[i])
-                    qswm = q + lmm.rankx
-                    V    = zeros(T, q, q)
-                    vmatrix!(V, gvec, θ, lmm, i)
-                    #zgz_base_inc!(V, θ, lmm.covstr, lmm.covstr.vcovblock[i], lmm.covstr.sblock[i])
-                    #rmat_base_inc!(V, θ[lmm.covstr.tr[end]], lmm.covstr, lmm.covstr.vcovblock[i], lmm.covstr.sblock[i])
-            #-------------------------------------------------------------------
-            # Cholesky
-                    Ai, info = LinearAlgebra.LAPACK.potrf!('U', V)
-                    A[i] = Ai
-                    vX   = LinearAlgebra.LAPACK.potrs!('U', A[i], copy(data.xv[i]))
-                    vy   = LinearAlgebra.LAPACK.potrs!('U', A[i], copy(data.yv[i]))
-                # Check matrix and make it avialible for logdet computation
-                    if info == 0
-                        θ₁ld = logdet(Cholesky(A[i], 'U', 0))
-                        ne = true
-                    else
-                        θ₁ld, ne = logdet_(Cholesky(A[i], 'U', 0))
-                    end
-                    if ne == false erroracc[t] = false end
-                    accθ₁[t]  += θ₁ld
-                    mul!(accθ₂[t], data.xv[i]', vX, one(T), one(T))
-                    mul!(accβm[t], data.xv[i]', vy, one(T), one(T))
-
-                end
-            #-------------------------------------------------------------------
-            end
-            θ₁   = sum(accθ₁)
-            θ₂tc = sum(accθ₂)
-            βtc  = sum(accβm)
-            #map(x->θ₂tc .+= x, accθ₂)
-            #map(x->βtc .+= x, accβm)
-            noerror = all(erroracc)
-        # Beta calculation
-            copyto!(θ₂, θ₂tc)
-            LinearAlgebra.LAPACK.potrf!('U', θ₂tc)
-            copyto!(β, LinearAlgebra.LAPACK.potrs!('U', θ₂tc, βtc))
-        # θ₃ calculation
-            @inbounds @simd for i = 1:n
-            #r    = LinearAlgebra.BLAS.gemv!('N', -one(T), data.xv[i], βtc, one(T), copy(data.yv[i]))
-                r    = mul!(copy(data.yv[i]), data.xv[i], βtc, -one(T), one(T))
-                vr   = LinearAlgebra.LAPACK.potrs!('U', A[i], copy(r))
-                θ₃  += dot(r, vr)
-                #θ₃  += BLAS.dot(length(r), r, 1, vr, 1)
-            end
-            ldθ₂ = LinearAlgebra.LAPACK.potrf!('U', copy(θ₂))[1]
-            logdetθ₂, ne = logdet_(Cholesky(ldθ₂, 'U', 0))
-            if ne == false noerror = false end
-        return   θ₁ + logdetθ₂ + θ₃ + c, β, θ₂, θ₃, noerror
-    end
-
 end # module

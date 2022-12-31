@@ -1,7 +1,7 @@
 name = "MetidaNLopt"
 uuid = "4e1362ca-e5a0-4237-9ffd-bca39e5440e3"
 authors = ["Vladimir Arnautov <mail@pharmcat.net>"]
-version = "0.4.2"
+version = "0.5.0"
 
 [deps]
 
@@ -11,11 +11,10 @@ LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Reexport = "189a3867-3050-52da-a836-e630ba90ab69"
 
 [compat]
-
-Metida = "0.12.4"
+Metida = "0.14.3, 0.14.4"
 NLopt = "0.6"
-Reexport = "0.2, 1"
-julia = "1.5, 1.6, 1.7"
+Reexport = "1"
+julia = "1"
 
 [extras]
 Metida = "a1dec852-9fe5-11e9-361f-8d9fde67cfa2"
