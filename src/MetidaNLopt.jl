@@ -3,34 +3,37 @@ module MetidaNLopt
     using NLopt, LinearAlgebra, Reexport
     @reexport using Metida
     import Metida: ForwardDiff, LMM, AbstractLMMDataBlocks, LMMDataViews, initvar, thetalength,
-    varlinkrvecapply!, varlinkvecapply, num_cores, varlinkvecapply!,
+    varlinkrvecapply!, varlinkvecapply, num_cores, varlinkvecapply!, diag!,
     lmmlog!, LMMLogMsg, fit_nlopt!, reml_sweep_β, reml_sweep_β_nlopt, vmatrix!, gmatvec
 
     reml_sweep_β_cuda(args...) = error("MetidaCu not found. \n - Run `using MetidaCu` before.")
     cudata(args...) = error("MetidaCu not found. \n - Run `using MetidaCu` before.")
 
-    function Metida.fit_nlopt!(lmm::LMM{T};
-        solver = :nlopt,
-        verbose = :auto,
-        varlinkf = :identity, 
-        rholinkf = :sigm,
-        aifirst = false,
-        g_tol = 1e-10,
-        x_tol = 1e-10,
-        x_rtol = 0,
-        f_tol = 1e-10,
-        f_rtol = 0,
-        hes::Bool = false,
-        init = nothing,
-        refitinit = false,
-        time_limit = 0,
-        optmethod = :LN_BOBYQA,
-        maxthreads = 16,
-        dopt = :LN_NEWUOA,
-        singtol = 1e-8,
-        istepm = 0.001,
-        sstepm = 0.00001,
-        io = stdout) where T
+    function Metida.fit_nlopt!(lmm::LMM{T}) where T
+
+        :solver ∈ kwkeys ? solver = kwargs[:solver] : solver = :nlopt
+        :verbose ∈ kwkeys ? verbose = kwargs[:verbose] : verbose = :auto
+        :varlinkf ∈ kwkeys ? varlinkf = kwargs[:varlinkf] : varlinkf = :exp
+        :rholinkf ∈ kwkeys ? rholinkf = kwargs[:rholinkf] : rholinkf = :sigm
+        :aifirst ∈ kwkeys ? aifirst = kwargs[:aifirst] : aifirst = false
+        :aifmax ∈ kwkeys ? aifmax = kwargs[:aifmax] : aifmax = 10
+        :g_tol ∈ kwkeys ? g_tol = kwargs[:g_tol] : g_tol = 1e-10
+        :x_tol ∈ kwkeys ? x_tol = kwargs[:x_tol] : x_tol = 1e-10
+        :f_tol ∈ kwkeys ? f_tol = kwargs[:f_tol] : f_tol = 1e-10
+        :x_rtol ∈ kwkeys ? x_tol = kwargs[:x_tol] : x_tol = 0.0
+        :f_rtol ∈ kwkeys ? f_tol = kwargs[:f_tol] : f_tol = 0.0
+        :hes ∈ kwkeys ? hes = kwargs[:hes] : hes = true
+        :init ∈ kwkeys ? init = kwargs[:init] : init = :nothing
+        :io ∈ kwkeys ? io = kwargs[:io] : io = stdout
+        :time_limit ∈ kwkeys ? time_limit = kwargs[:time_limit] : time_limit = 0
+        #:iterations ∈ kwkeys ? iterations = kwargs[:iterations] : iterations = 300
+        :refitinit ∈ kwkeys ? refitinit = kwargs[:refitinit] : refitinit = false
+        :optmethod ∈ kwkeys ? optmethod = kwargs[:optmethod] : optmethod = :LN_BOBYQA
+        :singtol ∈ kwkeys ? singtol = kwargs[:singtol] : singtol = 1e-8
+        :maxthreads ∈ kwkeys ? maxthreads = kwargs[:maxthreads] : maxthreads = num_cores()
+        :dopt ∈ kwkeys ? dopt = kwargs[:dopt] : dopt = :LN_BOBYQA
+        :istepm ∈ kwkeys ? istepm = kwargs[:istepm] : istepm = 0.001
+        :sstepm ∈ kwkeys ? sstepm = kwargs[:sstepm] : sstepm = 0.00001
 
         if lmm.result.fit
             if length(lmm.log) > 0 deleteat!(lmm.log, 1:length(lmm.log)) end
@@ -91,7 +94,6 @@ module MetidaNLopt
             end
         end
         ############################################################################
-        #varlinkrvecapply!(θ, lmm.covstr.ct; rholinkf = rholinkf)
         ############################################################################
         # :LN_COBYLA :LN_NELDERMEAD :LN_SBPLX  :LD_MMA  :LD_CCSAQ :LD_SLSQP :LD_LBFGS
         # :LN_PRAXIS :LD_VAR1 :AUGLAG
@@ -101,7 +103,6 @@ module MetidaNLopt
         NLopt.ftol_abs!(opt, f_tol)
         NLopt.xtol_rel!(opt, x_rtol)
         NLopt.xtol_abs!(opt, x_tol)
-        #opt.maxeval = 10
         opt.lower_bounds = lb
         opt.upper_bounds = ub
         opt.maxtime      = time_limit
@@ -118,12 +119,11 @@ module MetidaNLopt
         end
         opt.initial_step = istep
         counter = Dict{Symbol, Int}(:iter => 0)
-        #gradf(x) = reml_sweep_β(lmm, data, varlinkvecapply(x, lmm.covstr.ct; varlinkf = varlinkf, rholinkf = rholinkf); maxthreads = maxthreads)[1]
         #-----------------------------------------------------------------------
         obj(x, ::Any) = begin
-            #if length(g) > 0
-            #    ForwardDiff.gradient!(g, gradf, x)
-            #end
+            if length(g) > 0
+                error("Gradient not defined!")
+            end
             val = optfunc(lmm, data, varlinkvecapply!(x, lmm.covstr.ct; varlinkf = varlinkf, rholinkf = rholinkf); maxthreads = maxthreads)[1] 
             if val == Inf 
                 lmmlog!(io, lmm, verbose, LMMLogMsg(:WARN, "Unstable values during optimization. Check results."))
@@ -134,7 +134,7 @@ module MetidaNLopt
         NLopt.min_objective!(opt, obj)
         # Optimization object
         lmm.result.optim = NLopt.optimize!(opt, θ)
-        # Second 
+        # Second step
         if isa(dopt, Symbol)
             copyto!(θ, lmm.result.optim[2])
             opt = NLopt.Opt(dopt,  thetalength(lmm))
@@ -156,36 +156,45 @@ module MetidaNLopt
         # -2 LogREML, β, iC
         lmm.result.reml, lmm.result.beta, iC, θ₃, noerrors = optfunc(lmm, data, lmm.result.theta)
         if !noerrors LMMLogMsg(:ERROR, "The last optimization step wasn't accurate. Results can be wrong!") end
-        if !isnan(lmm.result.reml) && !isinf(lmm.result.reml) && noerrors
+        # Fit true
+        if !isnan(lmm.result.reml) && !isinf(lmm.result.reml) && rank(iC) == size(iC, 1)
             # Variance-vovariance matrix of β
-            lmm.result.c            = inv(iC)
+            copyto!(lmm.result.c, inv(iC))
             # SE
-            if  !any(x-> x < 0.0, diag(lmm.result.c))
-                lmm.result.se           = sqrt.(diag(lmm.result.c)) #ERROR: DomainError with -1.9121111845919027e-54
+            if  !any(x -> x < 0.0, diag(lmm.result.c))
+                diag!(sqrt, lmm.result.se, lmm.result.c)
                 if any(x-> x < singtol, lmm.result.se) && minimum(lmm.result.se)/maximum(lmm.result.se) < singtol lmmlog!(io, lmm, verbose, LMMLogMsg(:WARN, "Some of the SE parameters is suspicious.")) end
                 lmmlog!(io, lmm, verbose, LMMLogMsg(:INFO, "Model fitted."))
                 lmm.result.fit      = true
+            else
+                lmmlog!(io, lmm, verbose,LMMLogMsg(:ERROR, "Some variance less zero: $(diag(lmm.result.c))."))
             end
+        else
+            lmmlog!(io, lmm, verbose, LMMLogMsg(:ERROR, "REML not estimated or final iteration completed with errors."))
         end
+
         # Check G
-        if lmm.covstr.random[1].covtype.z
+        lmm.result.ipd = true
+        if !isa(lmm.covstr.random[1].covtype.s, ZERO)
             for i = 1:length(lmm.covstr.random)
-                dg = det(gmatrix(lmm, i))
-                if dg < singtol lmmlog!(io, lmm, verbose, LMMLogMsg(:WARN, "det(G) of random effect $(i) is less 1e-08.")) end
+                if isposdef(gmatrix(lmm, i)) == false
+                    lmm.result.ipd =  false
+                    lmmlog!(io, lmm, verbose, LMMLogMsg(:WARN, "Variance-covariance matrix (G) of random effect $(i) is not positive definite."))
+                end
             end
         end
         # Check Hessian
         if hes && lmm.result.fit
-                # Hessian
+            # Hessian
             lmm.result.h      = hessian(lmm, lmm.result.theta)
-                # H positive definite check
+            # H positive definite check
             if !isposdef(Symmetric(lmm.result.h))
                 lmmlog!(io, lmm, verbose, LMMLogMsg(:WARN, "Hessian is not positive definite."))
             end
             qrd = qr(lmm.result.h)
             for i = 1:length(lmm.result.theta)
                 if abs(qrd.R[i,i]) < singtol
-                    lmmlog!(io, lmm, verbose, LMMLogMsg(:WARN, "Hessian parameter ($(lmm.covstr.ct[i])) QR.R diagonal value ($(i)) is less than $singtol."))
+                    lmmlog!(io, lmm, verbose, LMMLogMsg(:WARN, "Hessian parameter ($(lmm.covstr.ct[i])) QR.R diagonal value ($(i)) is less than $(singtol)."))
                 end
             end
         end
@@ -194,22 +203,6 @@ module MetidaNLopt
             lmmlog!(io, lmm, verbose, LMMLogMsg(:INFO, "Model NOT fitted."))
         end
         lmm
-    end
-
-    function logdet_(C::Cholesky)
-        dd = zero(real(eltype(C)))
-        noerror = true
-        @inbounds for i in 1:size(C.factors,1)
-            v = real(C.factors[i,i])
-            if v > 0
-                dd += log(v)
-            else
-                C.factors[i,i] *= -1e-8
-                dd += log(real(C.factors[i,i]+4eps()))
-                noerror = false
-            end
-        end
-        dd + dd, noerror
     end
 
     function reml_sweep_β_nlopt(lmm, θ::Vector{T}) where T
