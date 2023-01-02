@@ -9,7 +9,9 @@ module MetidaNLopt
     reml_sweep_β_cuda(args...) = error("MetidaCu not found. \n - Run `using MetidaCu` before.")
     cudata(args...) = error("MetidaCu not found. \n - Run `using MetidaCu` before.")
 
-    function Metida.fit_nlopt!(lmm::LMM{T}) where T
+    function Metida.fit_nlopt!(lmm::LMM{T}; kwargs...) where T
+
+        kwkeys = keys(kwargs)
 
         :solver ∈ kwkeys ? solver = kwargs[:solver] : solver = :nlopt
         :verbose ∈ kwkeys ? verbose = kwargs[:verbose] : verbose = :auto

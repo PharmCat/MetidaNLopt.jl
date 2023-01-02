@@ -1,7 +1,6 @@
 # MetidaNLopt
 # Copyright © 2019-2020 Vladimir Arnautov aka PharmCat <mail@pharmcat.net>
-using Metida
-using MetidaNLopt
+using Metida, MetidaNLopt
 using  Test, CSV, DataFrames, StatsModels, CategoricalArrays
 
 df0 = CSV.File(joinpath(dirname(pathof(Metida)),"..","test","csv","df0.csv"); types = [String, String, String, String, Float64, Float64]) |> DataFrame
