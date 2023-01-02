@@ -1,6 +1,7 @@
 # MetidaNLopt
 # Copyright © 2019-2020 Vladimir Arnautov aka PharmCat <mail@pharmcat.net>
-using Metida, MetidaNLopt
+using Metida
+using MetidaNLopt
 using  Test, CSV, DataFrames, StatsModels, CategoricalArrays
 
 df0 = CSV.File(joinpath(dirname(pathof(Metida)),"..","test","csv","df0.csv"); types = [String, String, String, String, Float64, Float64]) |> DataFrame
@@ -33,7 +34,7 @@ ftdf3        = CSV.File(joinpath(dirname(pathof(Metida)),"..","test","csv","ftdf
     random = VarEffect(@covstr(formulation|subject), CSH),
     repeated = VarEffect(@covstr(formulation|subject), CS),
     )
-    fit!(lmm, solver = :nlopt, f_tol=1e-12, x_tol=1e-12)
+    fit!(lmm, solver = :nlopt, f_tol=1e-16, x_tol=1e-16, istepm = 0.1)
     @test Metida.m2logreml(lmm) ≈ 10.3039977509049 atol=1E-4
 
     lmm = LMM(@formula(var~sequence+period+formulation), df0;
