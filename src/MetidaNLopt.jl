@@ -22,8 +22,8 @@ module MetidaNLopt
         :g_tol ∈ kwkeys ? g_tol = kwargs[:g_tol] : g_tol = 1e-10
         :x_tol ∈ kwkeys ? x_tol = kwargs[:x_tol] : x_tol = 1e-10
         :f_tol ∈ kwkeys ? f_tol = kwargs[:f_tol] : f_tol = 1e-10
-        :x_rtol ∈ kwkeys ? x_tol = kwargs[:x_tol] : x_tol = 0.0
-        :f_rtol ∈ kwkeys ? f_tol = kwargs[:f_tol] : f_tol = 0.0
+        :x_rtol ∈ kwkeys ? x_rtol = kwargs[:x_rtol] : x_rtol = 0.0
+        :f_rtol ∈ kwkeys ? f_rtol = kwargs[:f_rtol] : f_rtol = 0.0
         :hes ∈ kwkeys ? hes = kwargs[:hes] : hes = true
         :init ∈ kwkeys ? init = kwargs[:init] : init = :nothing
         :io ∈ kwkeys ? io = kwargs[:io] : io = stdout
