@@ -10,8 +10,6 @@ module MetidaNLopt
     cudata(args...) = error("MetidaCu not found. \n - Run `using MetidaCu` before.")
 
     function Metida.fit_nlopt!(lmm::LMM{T}; kwargs...) where T
-
-
          kwkeys = keys(kwargs)
 
         :solver ∈ kwkeys ? solver = kwargs[:solver] : solver = :nlopt
@@ -22,22 +20,15 @@ module MetidaNLopt
         :x_rtol ∈ kwkeys ? x_rtol = kwargs[:x_rtol] : x_rtol = 0
         :f_tol ∈ kwkeys ? f_tol = kwargs[:f_tol] : f_tol = 1e-10
         :f_rtol ∈ kwkeys ? f_rtol = kwargs[:f_rtol] : f_rtol = 0
-        
         :hes ∈ kwkeys ? hes = kwargs[:hes] : hes = true
         :init ∈ kwkeys ? init = kwargs[:init] : init = :nothing
-        
         :refitinit ∈ kwkeys ? refitinit = kwargs[:refitinit] : refitinit = false
-
         :time_limit ∈ kwkeys ? time_limit = kwargs[:time_limit] : time_limit = 0
         #:iterations ∈ kwkeys ? iterations = kwargs[:iterations] : iterations = 300
-        
-  
         :optmethod ∈ kwkeys ? optmethod = kwargs[:optmethod] : optmethod = :LN_BOBYQA
         :singtol ∈ kwkeys ? singtol = kwargs[:singtol] : singtol = 1e-8
-        
         :maxthreads ∈ kwkeys ? maxthreads = kwargs[:maxthreads] : maxthreads = num_cores()
         :dopt ∈ kwkeys ? dopt = kwargs[:dopt] : dopt = :LN_NEWUOA
-     
         :istepm ∈ kwkeys ? istepm = kwargs[:istepm] : istepm = 0.001
         :sstepm ∈ kwkeys ? sstepm = kwargs[:sstepm] : sstepm = 0.00001
 
@@ -213,22 +204,6 @@ module MetidaNLopt
             lmmlog!(io, lmm, verbose, LMMLogMsg(:INFO, "Model NOT fitted."))
         end
         lmm
-    end
-
-    function logdet_(C::Cholesky)
-        dd = zero(real(eltype(C)))
-        noerror = true
-        @inbounds for i in 1:size(C.factors,1)
-            v = real(C.factors[i,i])
-            if v > 0
-                dd += log(v)
-            else
-                C.factors[i,i] *= -1e-8
-                dd += log(real(C.factors[i,i]+4eps()))
-                noerror = false
-            end
-        end
-        dd + dd, noerror
     end
 
     function reml_sweep_β_nlopt(lmm, θ::Vector{T}) where T
