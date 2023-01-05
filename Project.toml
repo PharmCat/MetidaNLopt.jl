@@ -11,7 +11,7 @@ LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Reexport = "189a3867-3050-52da-a836-e630ba90ab69"
 
 [compat]
-Metida = "0.14.3, 0.14.4"
+Metida = "0.14.3, 0.14.4, 0.14.5"
 NLopt = "0.6"
 Reexport = "1"
 julia = "1"

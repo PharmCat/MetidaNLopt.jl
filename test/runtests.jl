@@ -34,39 +34,39 @@ ftdf3        = CSV.File(joinpath(dirname(pathof(Metida)),"..","test","csv","ftdf
     random = VarEffect(@covstr(formulation|subject), CSH),
     repeated = VarEffect(@covstr(formulation|subject), CS),
     )
-    fit!(lmm, solver = :nlopt, f_tol=1e-16, x_tol=1e-16)
+    fit!(lmm, solver = :nlopt, f_tol=1e-16, x_tol=1e-16, istepm = 0.1)
     @test Metida.m2logreml(lmm) ≈ 10.3039977509049 atol=1E-4
 
     lmm = LMM(@formula(var~sequence+period+formulation), df0;
     repeated = VarEffect(@covstr(period|subject), CSH),
     )
-    fit!(lmm; solver = :nlopt, f_tol=1E-12, x_tol=1E-12)
+    fit!(lmm; solver = :nlopt, f_tol=1e-12, x_tol=1e-12)
     @test Metida.m2logreml(lmm) ≈ 8.740095420232805 atol=1E-5
 
 
     lmm = LMM(@formula(response ~1 + factor*time), ftdf;
     random = VarEffect(Metida.@covstr(1 + time|subject&factor), CSH),
     )
-    fit!(lmm; solver = :nlopt, f_tol=1e-16, x_tol=1e-16)
+    fit!(lmm; solver = :nlopt, f_tol=1e-12, x_tol=1e-12)
     @test m2logreml(lmm) ≈ 1300.1807598168923 atol=1E-5
 
     lmm = LMM(@formula(response ~ 1 + factor*time), ftdf2;
     repeated = VarEffect(@covstr(time|subject&factor), ARMA),
     )
-    fit!(lmm; solver = :nlopt, f_tol=1E-16, x_tol=1E-16)#, optmethod = :LN_NEWUOA
+    fit!(lmm; solver = :nlopt, f_tol=1e-12, x_tol=1e-12)#, optmethod = :LN_NEWUOA
     @test m2logreml(lmm) ≈ 715.4528559688382 atol = 1E-5
 
     lmm = LMM(@formula(response ~ 1 + factor), ftdf3; contrasts=Dict(:factor => DummyCoding(; base=1.0)),
     random = [VarEffect(@covstr(r1|subject), CS), VarEffect(@covstr(r2|subject), CS)],
     )
-    fit!(lmm; solver = :nlopt, f_tol=1e-16, x_tol=1e-16)
+    fit!(lmm; solver = :nlopt, f_tol=1e-12, x_tol=1e-12)
     @test m2logreml(lmm)  ≈ 710.4250214813896 atol=1E-5
 
     lmm = LMM(@formula(response ~ 1 + factor), ftdf3; contrasts=Dict(:factor => DummyCoding(; base=1.0)),
     random = VarEffect(@covstr(r1|subject), AR),
     repeated = VarEffect(@covstr(p|subject), DIAG),
     )
-    fit!(lmm; solver = :nlopt, f_tol=1e-16, x_tol=1e-16)
+    fit!(lmm; solver = :nlopt, f_tol=1e-12, x_tol=1e-12)
     @test m2logreml(lmm)  ≈ 698.8792511057682 atol=1E-5
 
     lmm = LMM(@formula(response ~ 1 + factor), ftdf3; contrasts=Dict(:factor => DummyCoding(; base=1.0)),
@@ -78,7 +78,7 @@ ftdf3        = CSV.File(joinpath(dirname(pathof(Metida)),"..","test","csv","ftdf
     lmm = LMM(@formula(response ~ 1 + factor), ftdf3;
     random = VarEffect(@covstr(1 + r1 + r2|subject), TOEPHP(3); coding = Dict(:r1 => DummyCoding(), :r2 => DummyCoding())),
     )
-    fit!(lmm, solver = :nlopt, f_tol=1e-16, x_tol=1e-16)
+    fit!(lmm, solver = :nlopt, f_tol=1e-12, x_tol=1e-12)
     @test m2logreml(lmm)  ≈ 705.9946274598822 atol=1E-5
 
 
@@ -86,14 +86,14 @@ ftdf3        = CSV.File(joinpath(dirname(pathof(Metida)),"..","test","csv","ftdf
     random = VarEffect(@covstr(r2|subject), DIAG),
     repeated = VarEffect(@covstr(p|subject), TOEPP(3)),
     )
-    fit!(lmm, solver = :nlopt, f_tol=1e-16, x_tol=1e-16)
+    fit!(lmm, solver = :nlopt, f_tol=1e-12, x_tol=1e-12)
     @test m2logreml(lmm)  ≈ 773.9575538254085 atol=1E-5
 
 
     lmm = LMM(@formula(response ~ 1), ftdf;
     repeated = VarEffect(Metida.@covstr(response+time|subject), SPEXP),
     )
-    fit!(lmm, solver = :nlopt, f_tol=1e-16, x_tol=1e-16)
+    fit!(lmm, solver = :nlopt, f_tol=1e-12, x_tol=1e-12)
     #SPSS 1528.715
     @test m2logreml(lmm) ≈ 1528.7150702624508 atol=1E-5
 end
